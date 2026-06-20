@@ -3,12 +3,15 @@
 import { use, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Trash2, Minus, Plus, Check } from 'lucide-react'
+import { ArrowLeft, Trash2, Minus, Plus, Check, StickyNote } from 'lucide-react'
 import {
   getTracker,
   listEntries,
+  listNotes,
+  saveNote,
   addEntry,
   removeLastEntry,
+  clearDay,
   deleteTracker,
 } from '@/lib/db'
 import { todayKey, toDayKey } from '@/lib/date'
@@ -17,6 +20,7 @@ import { useUser } from '@/lib/useUser'
 import type { Tracker, Entry } from '@/lib/types'
 import CalendarView from '@/components/CalendarView'
 import Analytics from '@/components/Analytics'
+import DayEditor from '@/components/DayEditor'
 import SignInScreen from '@/components/SignInScreen'
 
 export default function TrackerDetail({ params }: { params: Promise<{ id: string }> }) {
@@ -26,6 +30,8 @@ export default function TrackerDetail({ params }: { params: Promise<{ id: string
 
   const [tracker, setTracker] = useState<Tracker | null>(null)
   const [entries, setEntries] = useState<Entry[]>([])
+  const [notes, setNotes] = useState<Record<string, string>>({})
+  const [selectedDay, setSelectedDay] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [notFound, setNotFound] = useState(false)
   const [busy, setBusy] = useState(false)
@@ -45,10 +51,11 @@ export default function TrackerDetail({ params }: { params: Promise<{ id: string
           setNotFound(true)
           return
         }
-        const es = await listEntries(id)
+        const [es, ns] = await Promise.all([listEntries(id), listNotes(id)])
         if (!alive) return
         setTracker(t)
         setEntries(es)
+        setNotes(ns)
       } catch (e) {
         if (alive) setError(e instanceof Error ? e.message : 'Could not load this tracker.')
       } finally {
@@ -63,34 +70,73 @@ export default function TrackerDetail({ params }: { params: Promise<{ id: string
   const totals = dayTotals(entries)
   const todayTotal = totals[today] ?? 0
 
-  async function log(delta: number) {
+  // Add/remove a tap on any day (count trackers). delta is +1 / -1.
+  async function adjust(day: string, delta: number) {
     if (!tracker) return
-    if (delta < 0 && todayTotal <= 0) return
+    const dayTotal = totals[day] ?? 0
+    if (delta < 0 && dayTotal <= 0) return
     setBusy(true)
     setError(null)
     try {
       if (delta > 0) {
-        const e = await addEntry(tracker.id, today, 1)
+        const e = await addEntry(tracker.id, day, 1)
         setEntries((list) => [...list, e])
       } else {
-        await removeLastEntry(tracker.id, today)
-        // Drop the most recent entry for today from local state.
+        await removeLastEntry(tracker.id, day)
         setEntries((list) => {
           let idx = -1
           for (let i = list.length - 1; i >= 0; i--) {
-            if (list[i].day === today) {
+            if (list[i].day === day) {
               idx = i
               break
             }
           }
-          if (idx === -1) return list
-          return list.filter((_, i) => i !== idx)
+          return idx === -1 ? list : list.filter((_, i) => i !== idx)
         })
       }
     } catch {
-      setError('Could not save that tap. Try again.')
+      setError('Could not save that change. Try again.')
     } finally {
       setBusy(false)
+    }
+  }
+
+  // Mark a yes/no day done or not (at most one entry per day).
+  async function setDone(day: string, done: boolean) {
+    if (!tracker) return
+    const dayTotal = totals[day] ?? 0
+    if (done === dayTotal > 0) return
+    setBusy(true)
+    setError(null)
+    try {
+      if (done) {
+        const e = await addEntry(tracker.id, day, 1)
+        setEntries((list) => [...list, e])
+      } else {
+        await clearDay(tracker.id, day)
+        setEntries((list) => list.filter((e) => e.day !== day))
+      }
+    } catch {
+      setError('Could not save that change. Try again.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // Persist a day's note and reflect it locally (empty text removes it).
+  async function persistNote(day: string, text: string) {
+    if (!tracker) return
+    const trimmed = text.trim()
+    try {
+      await saveNote(tracker.id, day, trimmed)
+      setNotes((m) => {
+        const next = { ...m }
+        if (trimmed) next[day] = trimmed
+        else delete next[day]
+        return next
+      })
+    } catch {
+      setError('Could not save the note. Try again.')
     }
   }
 
@@ -146,7 +192,14 @@ export default function TrackerDetail({ params }: { params: Promise<{ id: string
     )
   }
 
-  const since = toDayKey(new Date(tracker.created_at))
+  // Analytics start at the tracker's creation day, or earlier if days were
+  // backfilled before it (so honest backfilling still counts toward streaks).
+  const createdDay = toDayKey(new Date(tracker.created_at))
+  const firstEntryDay = entries.reduce<string | null>(
+    (m, e) => (m === null || e.day < m ? e.day : m),
+    null,
+  )
+  const since = firstEntryDay && firstEntryDay < createdDay ? firstEntryDay : createdDay
   const unit = tracker.unit?.trim()
   const done = todayTotal > 0
 
@@ -191,10 +244,18 @@ export default function TrackerDetail({ params }: { params: Promise<{ id: string
 
       {/* Today logger */}
       <div className="mb-6 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
-        <div className="mb-3 text-sm font-medium text-zinc-600">Today</div>
+        <div className="mb-3 flex items-center justify-between">
+          <span className="text-sm font-medium text-zinc-600">Today</span>
+          <button
+            onClick={() => setSelectedDay(today)}
+            className="flex items-center gap-1 text-xs text-zinc-400 hover:text-indigo-600"
+          >
+            <StickyNote size={13} /> {notes[today] ? 'Edit note' : 'Add note'}
+          </button>
+        </div>
         {tracker.type === 'yesno' ? (
           <button
-            onClick={() => log(done ? -1 : 1)}
+            onClick={() => setDone(today, !done)}
             disabled={busy}
             className="flex w-full items-center justify-center gap-2 rounded-xl py-4 text-lg font-semibold text-white transition disabled:opacity-50"
             style={{ background: done ? tracker.color : '#a1a1aa' }}
@@ -204,7 +265,7 @@ export default function TrackerDetail({ params }: { params: Promise<{ id: string
         ) : (
           <div className="flex items-center justify-center gap-5">
             <button
-              onClick={() => log(-1)}
+              onClick={() => adjust(today, -1)}
               disabled={busy || todayTotal <= 0}
               className="flex h-12 w-12 items-center justify-center rounded-full bg-zinc-100 text-zinc-600 hover:bg-zinc-200 disabled:opacity-30"
               aria-label="Subtract one"
@@ -216,7 +277,7 @@ export default function TrackerDetail({ params }: { params: Promise<{ id: string
               {unit && <div className="text-xs text-zinc-400">{unit}</div>}
             </div>
             <button
-              onClick={() => log(1)}
+              onClick={() => adjust(today, 1)}
               disabled={busy}
               className="flex h-14 w-14 items-center justify-center rounded-full text-white hover:opacity-90 disabled:opacity-50"
               style={{ background: tracker.color }}
@@ -226,18 +287,42 @@ export default function TrackerDetail({ params }: { params: Promise<{ id: string
             </button>
           </div>
         )}
+        {notes[today] && (
+          <p className="mt-3 rounded-lg bg-zinc-50 px-3 py-2 text-sm text-zinc-600">{notes[today]}</p>
+        )}
         {error && <p className="mt-3 text-center text-sm text-red-600">{error}</p>}
       </div>
 
       <section className="mb-6">
         <h2 className="mb-2 text-sm font-semibold text-zinc-500">Calendar</h2>
-        <CalendarView tracker={tracker} totals={totals} />
+        <CalendarView
+          tracker={tracker}
+          totals={totals}
+          notes={notes}
+          selectedDay={selectedDay}
+          onSelectDay={setSelectedDay}
+        />
       </section>
 
       <section>
         <h2 className="mb-2 text-sm font-semibold text-zinc-500">Analytics</h2>
         <Analytics tracker={tracker} entries={entries} today={today} since={since} />
       </section>
+
+      {/* Per-day editor (opened by tapping a calendar day or "Add note") */}
+      {selectedDay && (
+        <DayEditor
+          tracker={tracker}
+          day={selectedDay}
+          total={totals[selectedDay] ?? 0}
+          note={notes[selectedDay] ?? ''}
+          busy={busy}
+          onAdjust={(delta) => adjust(selectedDay, delta)}
+          onSetDone={(d) => setDone(selectedDay, d)}
+          onSaveNote={(text) => persistNote(selectedDay, text)}
+          onClose={() => setSelectedDay(null)}
+        />
+      )}
 
       {/* Delete confirm */}
       {confirmDelete && (

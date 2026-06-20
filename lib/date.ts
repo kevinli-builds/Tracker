@@ -43,3 +43,18 @@ export function daysInMonth(year: number, month0: number): string[] {
   for (let d = 1; d <= count; d++) keys.push(toDayKey(new Date(year, month0, d)))
   return keys
 }
+
+const WEEKDAYS_SHORT = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+const MONTHS_SHORT = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+]
+
+// Friendly label for a day key: "Today", "Yesterday", or "Mon, Jun 16".
+export function dayLabel(key: string): string {
+  const today = todayKey()
+  if (key === today) return 'Today'
+  if (key === addDays(today, -1)) return 'Yesterday'
+  const d = fromDayKey(key)
+  return `${WEEKDAYS_SHORT[d.getDay()]}, ${MONTHS_SHORT[d.getMonth()]} ${d.getDate()}`
+}

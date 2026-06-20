@@ -15,6 +15,10 @@ the same stack as MapCrowd.
 - **Detail** (`/t/[id]`) — a bigger "today" logger, a month **calendar** tinted
   by what you logged, and **analytics**: current/longest streak, good days,
   totals, trailing 7/30-day sums, and a 30-day bar chart.
+- **Edit any day** — tap any day on the calendar to open a sheet that adjusts
+  that day's value (or toggles yes/no) and edits a free-text **note** for the
+  day. Days with a note show a dot. Backfilling earlier days extends analytics
+  back to the earliest logged day, so honest backfilling still counts.
 - **Goal direction** — when you create a tracker you say whether doing it is
   *good* (more = 💚, e.g. chia seeds), *bad* (less = 💚, e.g. drinks — a clean
   day is the win), or *neutral*. This only changes how streaks/"good days" and
@@ -28,12 +32,13 @@ you left off.
 
 ## One-time setup
 
-This app needs a Supabase project. It's single-user for now (no login) — the
-anon key has full access, which is fine for a personal tracker.
+This app needs a Supabase project with Google sign-in. Each user only sees their
+own data (per-user RLS).
 
 1. **Create a Supabase project** at https://supabase.com (free tier is plenty).
 2. **Apply the schema**: open the project → SQL Editor → paste all of
-   [`supabase/schema.sql`](supabase/schema.sql) → Run.
+   [`supabase/schema.sql`](supabase/schema.sql) → Run. (This is the full current
+   state — includes auth ownership and the `day_notes` table.)
 3. **Get your keys**: Project Settings → API. Copy the Project URL and the
    `anon` `public` key.
 4. **Local env**: copy `.env.local.example` to `.env.local` and fill in:
@@ -43,9 +48,11 @@ anon key has full access, which is fine for a personal tracker.
    ```
    The URL **must** include `https://`.
 5. **Enable Google sign-in**:
-   - Run [`supabase/02-auth.sql`](supabase/02-auth.sql) in the SQL editor (adds
-     `user_id` ownership + per-user RLS). Skip if you used the current
-     `schema.sql`, which already includes it.
+   - On an **existing** DB (created before these features), run the migrations
+     you haven't yet, in order: [`supabase/02-auth.sql`](supabase/02-auth.sql)
+     (adds `user_id` ownership + per-user RLS) and
+     [`supabase/03-notes.sql`](supabase/03-notes.sql) (adds the `day_notes`
+     table). On a **fresh** DB, `schema.sql` already includes both — skip these.
    - Supabase → **Authentication → Providers → Google**: make sure it's enabled.
    - Supabase → **Authentication → URL Configuration → Redirect URLs**: add
      `http://localhost:3000/**` (local dev) and `https://<your-vercel-app>/**`
@@ -80,26 +87,32 @@ app/
 components/
   AddTrackerModal.tsx
   TrackerCard.tsx
-  CalendarView.tsx
+  CalendarView.tsx   # Month grid; tap a day to edit it
+  DayEditor.tsx      # Per-day sheet: value editor + note
   Analytics.tsx
+  SignInScreen.tsx   # Google sign-in gate
 lib/
   supabase.ts       # Supabase client (validates env vars at startup)
-  db.ts             # All queries (list/create/delete trackers, add/remove entries)
+  db.ts             # All queries (trackers, entries, notes)
+  useUser.ts        # Auth hook + signInWithGoogle/signOut
   types.ts          # Tracker, Entry, GoalDirection types
   date.ts           # Local-date helpers (day keys are local, not UTC)
   stats.ts          # Pure analytics: streaks, day totals, summaries
   stats.test.ts     # Unit tests
   constants.ts      # Color + emoji palettes
 supabase/
-  schema.sql        # Full schema — run once on a fresh project
+  schema.sql        # Full current schema — run once on a fresh project
+  02-auth.sql       # Migration: per-user ownership + RLS
+  03-notes.sql      # Migration: day_notes table
 ```
 
 ## Data model
 
 | Table | What |
 |---|---|
-| `trackers` | One row per thing tracked: name, `type` (`yesno`/`count`), color, emoji, optional `unit`, `goal_direction`. |
-| `entries` | One row per tap: `tracker_id`, `day` (local date), `value`. A count day is `SUM(value)`; a yes/no day is "done" if any row exists. |
+| `trackers` | One row per thing tracked: `user_id` owner, name, `type` (`yesno`/`count`), color, emoji, optional `unit`, `goal_direction`. |
+| `entries` | One row per tap: `user_id`, `tracker_id`, `day` (local date), `value`. A count day is `SUM(value)`; a yes/no day is "done" if any row exists. |
+| `day_notes` | Optional free-text note per (`tracker_id`, `day`). |
 
-To make it multi-user later: add a `user_id` column to both tables and tighten
-the RLS policies from `using (true)` to `auth.uid() = user_id`.
+All tables are RLS-scoped to `auth.uid() = user_id`; the `user_id` columns
+default to `auth.uid()` so inserts fill the owner automatically.

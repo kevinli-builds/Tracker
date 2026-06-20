@@ -13,9 +13,15 @@ const WEEKDAYS = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
 export default function CalendarView({
   tracker,
   totals,
+  notes,
+  selectedDay,
+  onSelectDay,
 }: {
   tracker: Tracker
   totals: DayTotals
+  notes: Record<string, string>
+  selectedDay: string | null
+  onSelectDay: (day: string) => void
 }) {
   const now = new Date()
   const [year, setYear] = useState(now.getFullYear())
@@ -84,14 +90,25 @@ export default function CalendarView({
           const dayNum = fromDayKey(key).getDate()
           const total = totals[key] ?? 0
           const isToday = key === today
+          const isSelected = key === selectedDay
+          const isFuture = key > today
+          const hasNote = !!notes[key]
           const showCount = tracker.type === 'count' && total > 0
+          const ring = isSelected
+            ? 'ring-2 ring-indigo-500 ring-offset-1'
+            : isToday
+              ? 'ring-2 ring-zinc-900 ring-offset-1'
+              : ''
           return (
-            <div
+            <button
               key={key}
-              title={`${key}: ${total}`}
-              className={`flex aspect-square items-center justify-center rounded-lg text-sm ${
-                isToday ? 'ring-2 ring-zinc-900 ring-offset-1' : ''
-              } ${total === 0 ? 'text-zinc-400' : ''}`}
+              type="button"
+              disabled={isFuture}
+              onClick={() => onSelectDay(key)}
+              title={`${key}: ${total}${hasNote ? ' • has note' : ''}`}
+              className={`relative flex aspect-square items-center justify-center rounded-lg text-sm ${ring} ${
+                total === 0 ? 'text-zinc-400' : ''
+              } ${isFuture ? 'cursor-default opacity-40' : 'hover:ring-2 hover:ring-indigo-300'}`}
               style={cellStyle(key)}
             >
               {showCount ? (
@@ -99,10 +116,18 @@ export default function CalendarView({
               ) : (
                 <span>{dayNum}</span>
               )}
-            </div>
+              {hasNote && (
+                <span
+                  className="absolute bottom-1 right-1 h-1.5 w-1.5 rounded-full bg-current opacity-70"
+                  aria-hidden="true"
+                />
+              )}
+            </button>
           )
         })}
       </div>
+
+      <p className="mt-3 text-center text-xs text-zinc-400">Tap any day to edit it or add a note</p>
 
       <Legend tracker={tracker} />
     </div>

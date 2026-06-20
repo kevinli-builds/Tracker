@@ -45,6 +45,20 @@ create index if not exists trackers_user_idx on trackers (user_id);
 create index if not exists entries_user_idx on entries (user_id);
 
 -- ---------------------------------------------------------------------------
+-- day_notes: an optional free-text note per tracker per day.
+-- ---------------------------------------------------------------------------
+create table if not exists day_notes (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid references auth.users(id) on delete cascade default auth.uid(),
+  tracker_id uuid not null references trackers(id) on delete cascade,
+  day        date not null,
+  note       text not null check (char_length(note) <= 2000),
+  updated_at timestamptz not null default now(),
+  unique (tracker_id, day)
+);
+create index if not exists day_notes_tracker_idx on day_notes (tracker_id);
+
+-- ---------------------------------------------------------------------------
 -- Row Level Security — each user only sees their own rows.
 -- ---------------------------------------------------------------------------
 alter table trackers enable row level security;
@@ -57,5 +71,11 @@ create policy trackers_own on trackers
 
 drop policy if exists entries_own on entries;
 create policy entries_own on entries
+  for all to authenticated
+  using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+alter table day_notes enable row level security;
+drop policy if exists day_notes_own on day_notes;
+create policy day_notes_own on day_notes
   for all to authenticated
   using (auth.uid() = user_id) with check (auth.uid() = user_id);

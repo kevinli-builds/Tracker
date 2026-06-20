@@ -105,3 +105,45 @@ export async function clearDay(trackerId: string, day: string): Promise<void> {
     .eq('day', day)
   if (error) throw error
 }
+
+// ---- Day notes -----------------------------------------------------------
+
+// All notes for a tracker, as a { 'YYYY-MM-DD': text } map.
+export async function listNotes(trackerId: string): Promise<Record<string, string>> {
+  const { data, error } = await supabase
+    .from('day_notes')
+    .select('day, note')
+    .eq('tracker_id', trackerId)
+  if (error) {
+    // Tolerate the table not existing yet (migration 03-notes.sql not applied)
+    // so the rest of the detail page still works without notes.
+    if (error.code === '42P01' || error.code === 'PGRST205' || /day_notes/.test(error.message)) {
+      return {}
+    }
+    throw error
+  }
+  const map: Record<string, string> = {}
+  for (const row of data ?? []) map[row.day] = row.note
+  return map
+}
+
+// Save (upsert) or, when the text is empty, delete the note for a day.
+export async function saveNote(trackerId: string, day: string, note: string): Promise<void> {
+  const text = note.trim()
+  if (!text) {
+    const { error } = await supabase
+      .from('day_notes')
+      .delete()
+      .eq('tracker_id', trackerId)
+      .eq('day', day)
+    if (error) throw error
+    return
+  }
+  const { error } = await supabase
+    .from('day_notes')
+    .upsert(
+      { tracker_id: trackerId, day, note: text, updated_at: new Date().toISOString() },
+      { onConflict: 'tracker_id,day' },
+    )
+  if (error) throw error
+}
