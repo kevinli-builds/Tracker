@@ -153,12 +153,15 @@ export default function TrackerDetail({ params }: { params: Promise<{ id: string
   return (
     <main className="mx-auto w-full max-w-lg px-4 pb-16 pt-4">
       <div className="mb-4 flex items-center justify-between">
-        <Link href="/" className="flex items-center gap-1 text-sm text-zinc-500 hover:text-zinc-800">
+        <Link
+          href="/"
+          className="-my-1 flex items-center gap-1 py-2 pr-2 text-sm text-zinc-500 hover:text-zinc-800"
+        >
           <ArrowLeft size={16} /> Back
         </Link>
         <button
           onClick={() => setConfirmDelete(true)}
-          className="flex items-center gap-1 text-sm text-zinc-400 hover:text-red-600"
+          className="-my-1 flex items-center gap-1 py-2 pl-2 text-sm text-zinc-400 hover:text-red-600"
         >
           <Trash2 size={16} /> Delete
         </button>

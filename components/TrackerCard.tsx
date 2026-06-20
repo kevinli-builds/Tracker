@@ -67,7 +67,7 @@ export default function TrackerCard({
             onClick={() => onLog(-1)}
             disabled={busy || todayTotal <= 0}
             aria-label="Subtract one"
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-zinc-100 text-zinc-500 hover:bg-zinc-200 disabled:opacity-30"
+            className="flex h-11 w-11 items-center justify-center rounded-full bg-zinc-100 text-zinc-500 hover:bg-zinc-200 disabled:opacity-30"
           >
             <Minus size={18} />
           </button>

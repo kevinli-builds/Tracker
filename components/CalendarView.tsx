@@ -54,7 +54,7 @@ export default function CalendarView({
       <div className="mb-3 flex items-center justify-between">
         <button
           onClick={() => shift(-1)}
-          className="rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-100"
+          className="flex h-10 w-10 items-center justify-center rounded-lg text-zinc-500 hover:bg-zinc-100"
           aria-label="Previous month"
         >
           <ChevronLeft size={18} />
@@ -63,7 +63,7 @@ export default function CalendarView({
         <button
           onClick={() => shift(1)}
           disabled={isCurrentMonth}
-          className="rounded-lg p-1.5 text-zinc-500 hover:bg-zinc-100 disabled:opacity-30"
+          className="flex h-10 w-10 items-center justify-center rounded-lg text-zinc-500 hover:bg-zinc-100 disabled:opacity-30"
           aria-label="Next month"
         >
           <ChevronRight size={18} />
