@@ -1,0 +1,41 @@
+@import "tailwindcss";
+
+:root {
+  --bg: #f7f7f9;
+  --card: #ffffff;
+  --ink: #18181b;
+  --muted: #71717a;
+  --line: #e4e4e7;
+  --accent: #6366f1;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--ink);
+  min-height: 100vh;
+  min-height: 100dvh;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Slightly smaller root font on phones so more fits; full size at md+. */
+html {
+  font-size: 15px;
+}
+@media (min-width: 768px) {
+  html {
+    font-size: 16px;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+/* Disable text selection on tap targets so rapid logging doesn't highlight. */
+button {
+  -webkit-user-select: none;
+  user-select: none;
+}
