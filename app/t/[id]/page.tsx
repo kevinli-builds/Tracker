@@ -13,11 +13,12 @@ import {
   removeLastEntry,
   clearDay,
   deleteTracker,
+  updateTracker,
 } from '@/lib/db'
 import { todayKey, toDayKey } from '@/lib/date'
-import { dayTotals } from '@/lib/stats'
+import { dayTotals, defaultStreakSide } from '@/lib/stats'
 import { useUser } from '@/lib/useUser'
-import type { Tracker, Entry } from '@/lib/types'
+import type { Tracker, Entry, StreakSide } from '@/lib/types'
 import CalendarView from '@/components/CalendarView'
 import Analytics from '@/components/Analytics'
 import DayEditor from '@/components/DayEditor'
@@ -137,6 +138,20 @@ export default function TrackerDetail({ params }: { params: Promise<{ id: string
       })
     } catch {
       setError('Could not save the note. Try again.')
+    }
+  }
+
+  // Flip which side the streak counts; persist optimistically.
+  async function changeStreakSide(next: StreakSide) {
+    if (!tracker || (tracker.streak_side ?? defaultStreakSide(tracker.goal_direction)) === next) return
+    const prev = tracker
+    setTracker({ ...tracker, streak_side: next })
+    setError(null)
+    try {
+      await updateTracker(tracker.id, { streak_side: next })
+    } catch {
+      setTracker(prev)
+      setError('Could not update the streak setting. Try again.')
     }
   }
 
@@ -305,8 +320,28 @@ export default function TrackerDetail({ params }: { params: Promise<{ id: string
       </section>
 
       <section>
-        <h2 className="mb-2 text-sm font-semibold text-zinc-500">Analytics</h2>
-        <Analytics tracker={tracker} entries={entries} today={today} since={since} />
+        <div className="mb-2 flex items-center justify-between gap-2">
+          <h2 className="text-sm font-semibold text-zinc-500">Analytics</h2>
+          <div className="flex items-center gap-1.5 text-[11px] text-zinc-400">
+            <span>Streak counts</span>
+            <div className="flex overflow-hidden rounded-full border border-zinc-200">
+              {(['did', 'skipped'] as StreakSide[]).map((sideOpt) => {
+                const active = (tracker.streak_side ?? defaultStreakSide(tracker.goal_direction)) === sideOpt
+                return (
+                  <button
+                    key={sideOpt}
+                    onClick={() => changeStreakSide(sideOpt)}
+                    className={`px-2.5 py-1 font-medium transition ${active ? 'text-white' : 'text-zinc-500 hover:bg-zinc-100'}`}
+                    style={active ? { background: tracker.color } : undefined}
+                  >
+                    {sideOpt === 'did' ? 'Did it' : 'Skipped'}
+                  </button>
+                )
+              })}
+            </div>
+          </div>
+        </div>
+        <Analytics tracker={tracker} entries={entries} today={today} since={since} notes={notes} />
       </section>
 
       {/* Per-day editor (opened by tapping a calendar day or "Add note") */}

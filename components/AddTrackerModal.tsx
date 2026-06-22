@@ -3,8 +3,9 @@
 import { useState } from 'react'
 import { X } from 'lucide-react'
 import { createTracker } from '@/lib/db'
+import { defaultStreakSide } from '@/lib/stats'
 import { COLORS, EMOJIS } from '@/lib/constants'
-import type { Tracker, TrackerType, GoalDirection } from '@/lib/types'
+import type { Tracker, TrackerType, GoalDirection, StreakSide } from '@/lib/types'
 
 export default function AddTrackerModal({
   onClose,
@@ -16,11 +17,19 @@ export default function AddTrackerModal({
   const [name, setName] = useState('')
   const [type, setType] = useState<TrackerType>('yesno')
   const [goal, setGoal] = useState<GoalDirection>('more')
+  const [streakSide, setStreakSide] = useState<StreakSide>('did')
   const [emoji, setEmoji] = useState(EMOJIS[0])
   const [color, setColor] = useState(COLORS[0])
   const [unit, setUnit] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  // Picking a goal sets a sensible default streak side (avoid-goals streak on
+  // clean days); the user can still flip it below.
+  function pickGoal(g: GoalDirection) {
+    setGoal(g)
+    setStreakSide(defaultStreakSide(g))
+  }
 
   async function submit() {
     const trimmed = name.trim()
@@ -38,6 +47,7 @@ export default function AddTrackerModal({
         emoji,
         unit: type === 'count' ? unit.trim() || null : null,
         goal_direction: goal,
+        streak_side: streakSide,
       })
       onCreated(t)
     } catch (e) {
@@ -109,9 +119,26 @@ export default function AddTrackerModal({
         {/* Goal direction */}
         <label className="mb-1 block text-sm font-medium text-zinc-600">Is doing this good or bad for you?</label>
         <div className="mb-4 grid grid-cols-3 gap-2">
-          <GoalButton active={goal === 'more'} title="Good" sub="more = 💚" onClick={() => setGoal('more')} />
-          <GoalButton active={goal === 'less'} title="Bad" sub="less = 💚" onClick={() => setGoal('less')} />
-          <GoalButton active={goal === 'neutral'} title="Neutral" sub="just count" onClick={() => setGoal('neutral')} />
+          <GoalButton active={goal === 'more'} title="Good" sub="more = 💚" onClick={() => pickGoal('more')} />
+          <GoalButton active={goal === 'less'} title="Bad" sub="less = 💚" onClick={() => pickGoal('less')} />
+          <GoalButton active={goal === 'neutral'} title="Neutral" sub="just count" onClick={() => pickGoal('neutral')} />
+        </div>
+
+        {/* Streak side */}
+        <label className="mb-1 block text-sm font-medium text-zinc-600">Which streak do you want to celebrate?</label>
+        <div className="mb-4 grid grid-cols-2 gap-2">
+          <GoalButton
+            active={streakSide === 'did'}
+            title="Days I did it"
+            sub={type === 'count' ? 'logged ≥ 1' : 'marked done'}
+            onClick={() => setStreakSide('did')}
+          />
+          <GoalButton
+            active={streakSide === 'skipped'}
+            title="Days I skipped"
+            sub="kept it at zero"
+            onClick={() => setStreakSide('skipped')}
+          />
         </div>
 
         {/* Emoji */}

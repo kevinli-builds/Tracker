@@ -63,12 +63,13 @@ supabase/
   schema.sql        # Full current schema — run on a FRESH project
   02-auth.sql       # Migration: per-user ownership + RLS (already applied to live DB)
   03-notes.sql      # Migration: day_notes table (already applied to live DB)
+  04-streak-side.sql # Migration: trackers.streak_side column (did/skipped)
 ```
 
 ## Data model
 | Table | Purpose |
 |---|---|
-| `trackers` | One per tracked thing: `user_id` (owner), name, `type` (`yesno`/`count`), `color`, `emoji`, `unit?`, `goal_direction` (`more`/`less`/`neutral`), `sort_order`, `archived`, `created_at`. |
+| `trackers` | One per tracked thing: `user_id` (owner), name, `type` (`yesno`/`count`), `color`, `emoji`, `unit?`, `goal_direction` (`more`/`less`/`neutral`), `streak_side` (`did`/`skipped` — which side the streak counts), `sort_order`, `archived`, `created_at`. |
 | `entries` | One row per tap: `user_id`, `tracker_id`, `day` (LOCAL date), `value`. A count day = `SUM(value)`; a yes/no day = "done" if any row exists (kept to ≤1 row/day by the app). |
 | `day_notes` | Optional note, unique per (`tracker_id`, `day`): `user_id`, `note`, `updated_at`. |
 
@@ -92,6 +93,21 @@ supabase/
   `busy` flag guards against double-submits while a write is in flight.
 - **Analytics `since`** = the tracker's created day, or the earliest entry day if
   earlier (so honest backfilling counts). Computed in the detail page.
+- **Streak side** (`trackers.streak_side`): `'did'` streaks on days you logged it
+  (`total > 0`), `'skipped'` on clean days (`total === 0`). It's **independent of
+  `goal_direction`** (which still drives the calendar tint + the "good/clean/active
+  days" tile). Default at creation comes from the goal (`defaultStreakSide`: `less`
+  → `skipped`, else `did`); the detail page's "Streak counts" toggle flips it live
+  via `updateTracker`. Streak math (`currentStreak`/`longestStreak`) takes the side,
+  not the goal. App code reads `tracker.streak_side ?? defaultStreakSide(...)` so it
+  still works against rows from before migration 04.
+- **Chart ranges**: `Analytics` lets you pick week / month / year / all / custom
+  (date pickers). `stats.buildBuckets(totals, start, end)` auto-picks a
+  `Granularity` (`chooseGranularity`: ≤45 days daily, ≤366 weekly, else monthly) so
+  the bar count stays phone-readable. **Note callouts only render on daily bars** (a
+  week/month bucket has no single note day). Callouts mark interior strict local
+  max (`▲`) / min (`▼`) bars that have a `day_notes` note, shown on hover (desktop)
+  or tap (mobile).
 - **`listNotes` tolerates a missing `day_notes` table** (returns `{}` on
   `42P01`/`PGRST205`) so the detail page still loads if migration 03 lags a deploy.
 - **Auth is client-side, like MapCrowd** — `signInWithOAuth({ provider: 'google',
@@ -126,11 +142,15 @@ supabase/
   set for all environments. Must exist *before* a build (inlined at build time).
 
 ## Features built
-- Add trackers (yes/no or count; emoji, color, unit, goal direction)
+- Add trackers (yes/no or count; emoji, color, unit, goal direction, streak side)
 - Tap-to-log on the dashboard; per-tracker detail with today logger
 - Month calendar tinted by goal direction; note dots
-- Analytics: current/longest streak, good/clean days, totals, 7/30-day sums, 30-day chart
+- Analytics: current/longest streak, good/clean days, totals, 7/30-day sums
+- **Adjustable chart range**: week / month / year / all / custom, auto-bucketed
+  daily → weekly → monthly to stay readable
+- **Choosable streak side** ("did it" vs "skipped"), set at creation and flippable
+  on the detail page
 - **Edit any past day** via a calendar-tap bottom sheet (adjust value / toggle)
-- **Per-day notes**
+- **Per-day notes**, with peak/dip **note callouts** on the daily chart
 - Google sign-in, per-user data (RLS)
 - Mobile-tuned (tap targets, bottom sheets, safe-area)

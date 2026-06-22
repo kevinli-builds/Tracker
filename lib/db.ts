@@ -3,7 +3,7 @@
 // + policies; the call sites here stay the same.
 
 import { supabase } from './supabase'
-import type { Tracker, Entry, TrackerType, GoalDirection } from './types'
+import type { Tracker, Entry, TrackerType, GoalDirection, StreakSide } from './types'
 
 export async function listTrackers(): Promise<Tracker[]> {
   const { data, error } = await supabase
@@ -32,12 +32,28 @@ export interface NewTracker {
   emoji: string
   unit?: string | null
   goal_direction: GoalDirection
+  streak_side: StreakSide
 }
 
 export async function createTracker(input: NewTracker): Promise<Tracker> {
   const { data, error } = await supabase
     .from('trackers')
     .insert({ ...input, unit: input.unit || null })
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+// Patch editable settings on a tracker (e.g. which side the streak counts).
+export async function updateTracker(
+  id: string,
+  patch: Partial<Pick<Tracker, 'streak_side' | 'goal_direction' | 'name' | 'color' | 'emoji' | 'unit'>>,
+): Promise<Tracker> {
+  const { data, error } = await supabase
+    .from('trackers')
+    .update(patch)
+    .eq('id', id)
     .select()
     .single()
   if (error) throw error

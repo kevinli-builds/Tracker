@@ -22,6 +22,8 @@ create table if not exists trackers (
   -- 'less'  : you want to avoid this (e.g. drinks)          → good day = zero
   -- 'neutral': just counting                                → good day = any log
   goal_direction text not null default 'neutral' check (goal_direction in ('more', 'less', 'neutral')),
+  -- which side the streak counts: 'did' = days logged, 'skipped' = clean days
+  streak_side    text not null default 'did' check (streak_side in ('did', 'skipped')),
   sort_order     int not null default 0,
   archived       boolean not null default false,
   created_at     timestamptz not null default now()

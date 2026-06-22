@@ -58,3 +58,17 @@ export function dayLabel(key: string): string {
   const d = fromDayKey(key)
   return `${WEEKDAYS_SHORT[d.getDay()]}, ${MONTHS_SHORT[d.getMonth()]} ${d.getDate()}`
 }
+
+// Compact label for a day key: "Jun 3", plus the year if it isn't this year.
+export function shortDay(key: string): string {
+  const d = fromDayKey(key)
+  const base = `${MONTHS_SHORT[d.getMonth()]} ${d.getDate()}`
+  return d.getFullYear() === new Date().getFullYear() ? base : `${base}, ${d.getFullYear()}`
+}
+
+// Compact month label for a 'YYYY-MM' or day key: "Jun", plus year if not this year.
+export function shortMonth(key: string): string {
+  const [y, m] = key.split('-').map(Number)
+  const base = MONTHS_SHORT[m - 1]
+  return y === new Date().getFullYear() ? base : `${base} '${String(y).slice(2)}`
+}
