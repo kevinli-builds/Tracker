@@ -3,7 +3,7 @@
 import { use, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Trash2, Minus, Plus, Check, StickyNote } from 'lucide-react'
+import { ArrowLeft, Trash2, Minus, Plus, Check, StickyNote, Pencil } from 'lucide-react'
 import {
   getTracker,
   listEntries,
@@ -18,6 +18,7 @@ import {
 import { todayKey, toDayKey } from '@/lib/date'
 import { dayTotals, defaultStreakSide } from '@/lib/stats'
 import { useUser } from '@/lib/useUser'
+import { EMOJIS } from '@/lib/constants'
 import type { Tracker, Entry, StreakSide } from '@/lib/types'
 import CalendarView from '@/components/CalendarView'
 import Analytics from '@/components/Analytics'
@@ -37,6 +38,7 @@ export default function TrackerDetail({ params }: { params: Promise<{ id: string
   const [notFound, setNotFound] = useState(false)
   const [busy, setBusy] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
+  const [editingEmoji, setEditingEmoji] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const today = todayKey()
@@ -141,6 +143,22 @@ export default function TrackerDetail({ params }: { params: Promise<{ id: string
     }
   }
 
+  // Change the tracker's icon; persist optimistically.
+  async function changeEmoji(next: string) {
+    if (!tracker) return
+    setEditingEmoji(false)
+    if (tracker.emoji === next) return
+    const prev = tracker
+    setTracker({ ...tracker, emoji: next })
+    setError(null)
+    try {
+      await updateTracker(tracker.id, { emoji: next })
+    } catch {
+      setTracker(prev)
+      setError('Could not update the icon. Try again.')
+    }
+  }
+
   // Flip which side the streak counts; persist optimistically.
   async function changeStreakSide(next: StreakSide) {
     if (!tracker || (tracker.streak_side ?? defaultStreakSide(tracker.goal_direction)) === next) return
@@ -237,12 +255,39 @@ export default function TrackerDetail({ params }: { params: Promise<{ id: string
 
       {/* Header */}
       <div className="mb-5 flex items-center gap-3">
-        <span
-          className="flex h-14 w-14 items-center justify-center rounded-xl text-2xl"
-          style={{ background: tracker.color + '22' }}
-        >
-          {tracker.emoji}
-        </span>
+        <div className="relative">
+          <button
+            onClick={() => setEditingEmoji((v) => !v)}
+            className="flex h-14 w-14 items-center justify-center rounded-xl text-2xl transition hover:brightness-95"
+            style={{ background: tracker.color + '22' }}
+            aria-label="Change icon"
+          >
+            {tracker.emoji}
+            <span className="absolute -bottom-1 -right-1 flex h-5 w-5 items-center justify-center rounded-full bg-white text-zinc-500 shadow ring-1 ring-black/5">
+              <Pencil size={11} />
+            </span>
+          </button>
+          {editingEmoji && (
+            <>
+              <div className="fixed inset-0 z-10" onClick={() => setEditingEmoji(false)} />
+              <div className="absolute left-0 top-full z-20 mt-2 w-64 rounded-xl bg-white p-2 shadow-xl ring-1 ring-black/10">
+                <div className="flex flex-wrap gap-1">
+                  {EMOJIS.map((e) => (
+                    <button
+                      key={e}
+                      onClick={() => changeEmoji(e)}
+                      className={`flex h-9 w-9 items-center justify-center rounded-lg text-lg ${
+                        tracker.emoji === e ? 'bg-indigo-100 ring-2 ring-indigo-500' : 'hover:bg-zinc-100'
+                      }`}
+                    >
+                      {e}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </>
+          )}
+        </div>
         <div>
           <h1 className="text-xl font-bold leading-tight">{tracker.name}</h1>
           <p className="text-sm text-zinc-500">

@@ -19,7 +19,8 @@ the same stack as MapCrowd.
   totals, trailing 7/30-day sums, and a bar chart with an **adjustable range**
   (week / month / year / all / custom) that auto-buckets daily → weekly →
   monthly so it stays phone-readable. On the daily view, relative peaks (`▲`)
-  and dips (`▼`) that have a note get a **callout** you can hover/tap.
+  and dips (`▼`) that have a note get a **callout** you can hover/tap. Tap the
+  **icon** in the header to swap a tracker's emoji any time.
 - **Edit any day** — tap any day on the calendar to open a sheet that adjusts
   that day's value (or toggles yes/no) and edits a free-text **note** for the
   day. Days with a note show a dot. Backfilling earlier days extends analytics

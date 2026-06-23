@@ -40,7 +40,7 @@ without them. For a CI/clean build without real creds, pass dummy values:
 ```
 app/
   page.tsx          # Dashboard: auth gate → tracker list, tap-to-log, add modal, sign-out
-  t/[id]/page.tsx   # Detail: today logger, calendar, analytics, per-day editor, delete
+  t/[id]/page.tsx   # Detail: today logger, calendar, analytics, per-day editor, editable icon, delete
   layout.tsx        # Root layout + viewport (viewport-fit=cover for safe-area)
   globals.css       # Tailwind import + theme CSS vars
 components/
@@ -108,6 +108,12 @@ supabase/
   week/month bucket has no single note day). Callouts mark interior strict local
   max (`▲`) / min (`▼`) bars that have a `day_notes` note, shown on hover (desktop)
   or tap (mobile).
+- **Editing tracker settings** all go through `db.ts` `updateTracker(id, patch)`
+  (patches `name`/`color`/`emoji`/`unit`/`goal_direction`/`streak_side`). The
+  detail header's icon tile is a button → inline emoji picker (same `EMOJIS`
+  palette as the create modal) that calls `changeEmoji`, persisting optimistically
+  with rollback on error — the same pattern as the streak-side toggle. `name`,
+  `color`, and `unit` are patchable too but have no UI yet.
 - **`listNotes` tolerates a missing `day_notes` table** (returns `{}` on
   `42P01`/`PGRST205`) so the detail page still loads if migration 03 lags a deploy.
 - **Auth is client-side, like MapCrowd** — `signInWithOAuth({ provider: 'google',
@@ -150,6 +156,8 @@ supabase/
   daily → weekly → monthly to stay readable
 - **Choosable streak side** ("did it" vs "skipped"), set at creation and flippable
   on the detail page
+- **Editable icon** — tap the detail-page header tile to pick a new emoji (persists
+  via `updateTracker`)
 - **Edit any past day** via a calendar-tap bottom sheet (adjust value / toggle)
 - **Per-day notes**, with peak/dip **note callouts** on the daily chart; today's
   note is also editable inline from each **dashboard card** (`listNotesForDay`)
