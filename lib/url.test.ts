@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { normalizeUrl, hostLabel } from './url'
+import { normalizeUrl, hostLabel, safeHref } from './url'
 
 describe('normalizeUrl', () => {
   it('keeps valid http(s) URLs', () => {
@@ -21,6 +21,18 @@ describe('normalizeUrl', () => {
     expect(normalizeUrl('data:text/html,<script>')).toBeNull()
     expect(normalizeUrl('file:///etc/passwd')).toBeNull()
     expect(normalizeUrl('mailto:me@example.com')).toBeNull()
+  })
+})
+
+describe('safeHref', () => {
+  it('passes through safe http(s) URLs', () => {
+    expect(safeHref('https://docs.google.com/doc/1')).toBe('https://docs.google.com/doc/1')
+  })
+  it('returns # for dangerous or missing values (defense-in-depth at render)', () => {
+    expect(safeHref('javascript:alert(1)')).toBe('#')
+    expect(safeHref('')).toBe('#')
+    expect(safeHref(null)).toBe('#')
+    expect(safeHref(undefined)).toBe('#')
   })
 })
 

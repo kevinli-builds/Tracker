@@ -17,7 +17,7 @@ import type {
 // True when a PostgREST error means "that table doesn't exist yet" — used to
 // tolerate a migration that lags a deploy (e.g. day_notes, tracker_resources).
 function isMissingTable(error: { code?: string; message?: string }, table: string): boolean {
-  return error.code === '42P01' || error.code === 'PGRST205' || new RegExp(table).test(error.message ?? '')
+  return error.code === '42P01' || error.code === 'PGRST205' || (error.message ?? '').includes(table)
 }
 
 export async function listTrackers(): Promise<Tracker[]> {

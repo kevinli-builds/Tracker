@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Link2, StickyNote, Trash2, ExternalLink, Pencil, X } from 'lucide-react'
 import { listResources, addResource, updateResource, deleteResource } from '@/lib/db'
-import { normalizeUrl, hostLabel } from '@/lib/url'
+import { normalizeUrl, hostLabel, safeHref } from '@/lib/url'
 import type { TrackerResource, ResourceKind } from '@/lib/types'
 
 // Reference material attached to a tracker: titled links and free-text notes
@@ -159,7 +159,7 @@ function ResourceRow({
       <div className="min-w-0 flex-1">
         {r.kind === 'link' && r.url ? (
           <a
-            href={r.url}
+            href={safeHref(r.url)}
             target="_blank"
             rel="noopener noreferrer"
             className="group flex items-center gap-1 text-sm font-medium text-indigo-600 hover:underline"
@@ -258,6 +258,7 @@ function ResourceForm({
             value={url}
             onChange={(e) => setUrl(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && !saving && submit()}
+            maxLength={2000}
             placeholder="https://… (paste a link)"
             className="mb-2 w-full rounded-lg border border-zinc-300 px-2.5 py-1.5 text-sm outline-none focus:border-indigo-500"
           />
@@ -265,6 +266,7 @@ function ResourceForm({
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && !saving && submit()}
+            maxLength={120}
             placeholder="Label (optional, e.g. Stretch routine)"
             className="mb-2 w-full rounded-lg border border-zinc-300 px-2.5 py-1.5 text-sm outline-none focus:border-indigo-500"
           />
@@ -274,6 +276,7 @@ function ResourceForm({
           <input
             value={title}
             onChange={(e) => setTitle(e.target.value)}
+            maxLength={120}
             placeholder="Title (optional)"
             className="mb-2 w-full rounded-lg border border-zinc-300 px-2.5 py-1.5 text-sm outline-none focus:border-indigo-500"
           />

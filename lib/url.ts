@@ -20,6 +20,15 @@ export function normalizeUrl(input: string): string | null {
   return parsed.toString()
 }
 
+// A render-safe href for a stored link: the URL only if it still passes the
+// http(s) check, else '#'. Link URLs are normalized at write time, but this
+// guards the rendered target="_blank" href against any row that wasn't
+// (defense-in-depth — a tampered/legacy value can't yield a javascript: href).
+export function safeHref(url: string | null | undefined): string {
+  if (!url) return '#'
+  return normalizeUrl(url) ?? '#'
+}
+
 // A short display label for a URL: its hostname without a leading "www.".
 // Falls back to the raw string if it can't be parsed.
 export function hostLabel(url: string): string {
