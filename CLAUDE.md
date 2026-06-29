@@ -51,12 +51,13 @@ components/
   DayEditor.tsx        # Bottom-sheet for one day: value editor + note textarea
   Analytics.tsx        # Stat tiles + 30-day bar chart
   ResourcesSection.tsx # Tracker-level links + notes (add/edit/delete) on the detail page
+  SectionHeader.tsx    # Dashboard group divider: title + rule, collapse, rename, delete, reorder
   SignInScreen.tsx     # "Sign in with Google" gate
 lib/
   supabase.ts       # Supabase client (throws if env missing)
-  db.ts             # ALL queries (trackers, entries, notes, resources); listLatestEntries powers "days since" + measure latest; setDayValue for measure
+  db.ts             # ALL queries (trackers, entries, notes, resources, sections); listLatestEntries powers "days since" + measure latest; setDayValue for measure
   useUser.ts        # useUser() hook + signInWithGoogle()/signOut()
-  types.ts          # Tracker, Entry, TrackerType (yesno/count/measure), GoalDirection, DayTotals, TrackerResource
+  types.ts          # Tracker (+section_id), Section, Entry, TrackerType (yesno/count/measure), GoalDirection, DayTotals, TrackerResource
   date.ts           # LOCAL day-key helpers + dayLabel/daysInMonth/daysBetween — unit-tested
   date.test.ts
   url.ts            # normalizeUrl (safe http(s) only) + safeHref + hostLabel for resource links — unit-tested
@@ -73,6 +74,7 @@ supabase/
   04-streak-side.sql # Migration: trackers.streak_side column (did/skipped)
   05-resources.sql  # Migration: tracker_resources table (links + notes)
   06-measure.sql    # Migration: 'measure' type + entries.value int→numeric
+  07-sections.sql   # Migration: sections table + trackers.section_id
 ```
 
 ## Data model
@@ -82,6 +84,7 @@ supabase/
 | `entries` | One row per tap: `user_id`, `tracker_id`, `day` (LOCAL date), `value` (**numeric** — measures store decimals). A count day = `SUM(value)`; a yes/no day = "done" if any row exists; a **measure** day = one row holding the reading (latest replaces). |
 | `day_notes` | Optional note, unique per (`tracker_id`, `day`): `user_id`, `note`, `updated_at`. |
 | `tracker_resources` | Reference material attached to a tracker (not a day): `kind` (`link`/`note`), optional `title`, `url` (links), `body` (notes), `sort_order`. A check enforces link⇒url, note⇒body. |
+| `sections` | Dashboard groups: `title`, `sort_order`, `collapsed` (synced). `trackers.section_id` → `sections.id` (`on delete set null` → ungrouped). |
 
 - **RLS**: every table is `for all to authenticated using (auth.uid() = user_id)
   with check (auth.uid() = user_id)`. The `user_id` columns **default to
@@ -129,6 +132,16 @@ supabase/
   persist `sort_order = list position` via `updateTracker` for every row whose
   position changed (optimistic, reverts on failure). The column predates this —
   no migration needed.
+- **Sections** (`sections` table, [`SectionHeader`](components/SectionHeader.tsx)):
+  optional collapsible groups on the dashboard. Trackers reference one via
+  `section_id` (null = **ungrouped, rendered first** with no header). The
+  dashboard groups `trackers` by `section_id`; **up/down arrows reorder within a
+  group** (`moveTracker` swaps the in-group neighbour, then persists global
+  `sort_order`); assignment is a `<select>` on each card (`assignSection` →
+  `updateTracker({ section_id })`). `collapsed` is a **synced** column (toggling
+  writes it). Section CRUD/reorder live in `db.ts` (`createSection`/`updateSection`/
+  `deleteSection`); deleting a section ungroups its trackers (FK `on delete set
+  null`). `listSections` tolerates a missing table (migration 07).
 - **"Days since" hint** (dashboard card): `daysBetween(lastDay, today)` where
   `lastDay` comes from `db.ts` `listLatestEntries()` (latest `{day, value}` per
   tracker; pulls `(tracker_id, day, value)` for the user and keeps the first of a
@@ -215,6 +228,9 @@ supabase/
 - **Measure tracker type** — free-form numeric readings (e.g. weight), latest
   replaces per day, with latest/avg/min/max + trend chart (needs migration
   `06-measure.sql`, which also makes `entries.value` numeric)
+- **Dashboard sections** — collapsible groups (title + thin rule); assign via a
+  per-card picker, reorder within a group, collapse state synced (needs migration
+  `07-sections.sql`)
 - **Edit any past day** via a calendar-tap bottom sheet (adjust value / toggle)
 - **Per-day notes**, with peak/dip **note callouts** on the daily chart; today's
   note is also editable inline from each **dashboard card** (`listNotesForDay`)

@@ -6,11 +6,26 @@
 -- was migrated to this by supabase/02-auth.sql.)
 
 -- ---------------------------------------------------------------------------
+-- sections: optional collapsible groups for the dashboard list. A tracker's
+-- section_id points here (null = ungrouped, shown first).
+-- ---------------------------------------------------------------------------
+create table if not exists sections (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid references auth.users(id) on delete cascade default auth.uid(),
+  title      text not null check (char_length(title) between 1 and 80),
+  sort_order int not null default 0,
+  collapsed  boolean not null default false,
+  created_at timestamptz not null default now()
+);
+create index if not exists sections_user_idx on sections (user_id);
+
+-- ---------------------------------------------------------------------------
 -- trackers: one row per thing you want to track.
 -- ---------------------------------------------------------------------------
 create table if not exists trackers (
   id             uuid primary key default gen_random_uuid(),
   user_id        uuid references auth.users(id) on delete cascade default auth.uid(),
+  section_id     uuid references sections(id) on delete set null,
   name           text not null check (char_length(name) between 1 and 80),
   -- 'yesno'  : a day is either done or not (at most one entry per day)
   -- 'count'  : tally taps within a day (a day's value is SUM of its entries)
@@ -49,6 +64,7 @@ create index if not exists entries_tracker_day_idx on entries (tracker_id, day);
 create index if not exists entries_day_idx on entries (day);
 create index if not exists trackers_user_idx on trackers (user_id);
 create index if not exists entries_user_idx on entries (user_id);
+create index if not exists trackers_section_idx on trackers (section_id);
 
 -- ---------------------------------------------------------------------------
 -- day_notes: an optional free-text note per tracker per day.
@@ -89,6 +105,12 @@ create index if not exists tracker_resources_tracker_idx on tracker_resources (t
 -- ---------------------------------------------------------------------------
 -- Row Level Security — each user only sees their own rows.
 -- ---------------------------------------------------------------------------
+alter table sections enable row level security;
+drop policy if exists sections_own on sections;
+create policy sections_own on sections
+  for all to authenticated
+  using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
 alter table trackers enable row level security;
 alter table entries  enable row level security;
 

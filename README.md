@@ -20,6 +20,10 @@ the same stack as MapCrowd.
   heart rate, %). You type the value (decimals OK); the latest reading replaces
   that day's. Analytics show **latest / average / lowest / highest** and a trend
   chart instead of totals.
+- **Sections** — group trackers under minimalist headers (a title above a thin
+  line) right on the dashboard. Add a section, pick a tracker's section from its
+  card, reorder within a group, and **collapse** sections you don't need open
+  (collapse state syncs across devices). Ungrouped trackers show at the top.
 - **Detail** (`/t/[id]`) — a bigger "today" logger, a month **calendar** tinted
   by what you logged, and **analytics**: current/longest streak, good days,
   totals, trailing 7/30-day sums, and a bar chart with an **adjustable range**
@@ -77,8 +81,10 @@ own data (per-user RLS).
      [`supabase/05-resources.sql`](supabase/05-resources.sql) (adds the
      `tracker_resources` table for links + notes), and
      [`supabase/06-measure.sql`](supabase/06-measure.sql) (adds the `measure`
-     tracker type and makes `entries.value` numeric). On a **fresh** DB,
-     `schema.sql` already includes all of these — skip them.
+     tracker type and makes `entries.value` numeric), and
+     [`supabase/07-sections.sql`](supabase/07-sections.sql) (adds the `sections`
+     table and `trackers.section_id`). On a **fresh** DB, `schema.sql` already
+     includes all of these — skip them.
    - Supabase → **Authentication → Providers → Google**: make sure it's enabled.
    - Supabase → **Authentication → URL Configuration → Redirect URLs**: add
      `http://localhost:3000/**` (local dev) and `https://<your-vercel-app>/**`
@@ -117,6 +123,7 @@ components/
   DayEditor.tsx        # Per-day sheet: value editor + note
   Analytics.tsx        # Stat tiles + adjustable-range bar chart with note callouts
   ResourcesSection.tsx # Tracker-level links + notes
+  SectionHeader.tsx    # Dashboard group header (title + rule, collapse, rename, delete)
   SignInScreen.tsx     # Google sign-in gate
 lib/
   supabase.ts       # Supabase client (validates env vars at startup)
@@ -136,6 +143,7 @@ supabase/
   04-streak-side.sql # Migration: trackers.streak_side column
   05-resources.sql  # Migration: tracker_resources table (links + notes)
   06-measure.sql    # Migration: 'measure' type + numeric entry values
+  07-sections.sql   # Migration: sections table + trackers.section_id
 ```
 
 ## Data model
@@ -146,6 +154,7 @@ supabase/
 | `entries` | One row per tap: `user_id`, `tracker_id`, `day` (local date), `value` (numeric). A count day is `SUM(value)`; a yes/no day is "done" if any row exists; a measure day is a single reading (latest replaces). |
 | `day_notes` | Optional free-text note per (`tracker_id`, `day`). |
 | `tracker_resources` | Reference material on a tracker: `kind` (`link`/`note`), optional `title`, `url` (links), `body` (notes). |
+| `sections` | Dashboard groups: `title`, `sort_order`, `collapsed`. `trackers.section_id` points here (null = ungrouped). |
 
 All tables are RLS-scoped to `auth.uid() = user_id`; the `user_id` columns
 default to `auth.uid()` so inserts fill the owner automatically.

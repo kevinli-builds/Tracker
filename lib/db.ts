@@ -12,6 +12,7 @@ import type {
   StreakSide,
   TrackerResource,
   ResourceKind,
+  Section,
 } from './types'
 
 // True when a PostgREST error means "that table doesn't exist yet" — used to
@@ -71,7 +72,7 @@ export async function createTracker(input: NewTracker): Promise<Tracker> {
 export async function updateTracker(
   id: string,
   patch: Partial<
-    Pick<Tracker, 'streak_side' | 'goal_direction' | 'name' | 'color' | 'emoji' | 'unit' | 'sort_order'>
+    Pick<Tracker, 'streak_side' | 'goal_direction' | 'name' | 'color' | 'emoji' | 'unit' | 'sort_order' | 'section_id'>
   >,
 ): Promise<Tracker> {
   const { data, error } = await supabase
@@ -86,6 +87,48 @@ export async function updateTracker(
 
 export async function deleteTracker(id: string): Promise<void> {
   const { error } = await supabase.from('trackers').delete().eq('id', id)
+  if (error) throw error
+}
+
+// ---- Sections (dashboard groups) ------------------------------------------
+
+// All sections, in display order. Tolerates a missing table so the dashboard
+// still loads if migration 07-sections.sql lags a deploy.
+export async function listSections(): Promise<Section[]> {
+  const { data, error } = await supabase
+    .from('sections')
+    .select('*')
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true })
+  if (error) {
+    if (isMissingTable(error, 'sections')) return []
+    throw error
+  }
+  return data ?? []
+}
+
+export async function createSection(title: string, sortOrder: number): Promise<Section> {
+  const { data, error } = await supabase
+    .from('sections')
+    .insert({ title, sort_order: sortOrder })
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function updateSection(
+  id: string,
+  patch: Partial<Pick<Section, 'title' | 'sort_order' | 'collapsed'>>,
+): Promise<Section> {
+  const { data, error } = await supabase.from('sections').update(patch).eq('id', id).select().single()
+  if (error) throw error
+  return data
+}
+
+// Delete a section. Its trackers fall back to ungrouped (FK on delete set null).
+export async function deleteSection(id: string): Promise<void> {
+  const { error } = await supabase.from('sections').delete().eq('id', id)
   if (error) throw error
 }
 

@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { Minus, Plus, Check, ChevronRight, ChevronUp, ChevronDown, StickyNote, Clock } from 'lucide-react'
+import { Minus, Plus, Check, ChevronRight, ChevronUp, ChevronDown, StickyNote, Clock, FolderInput } from 'lucide-react'
 import type { Tracker } from '@/lib/types'
 import { daysBetween } from '@/lib/date'
 import { fmtNum, parseMeasure } from '@/lib/format'
@@ -20,12 +20,14 @@ export default function TrackerCard({
   latestValue,
   today,
   busy,
+  sections,
   canMoveUp,
   canMoveDown,
   onMoveUp,
   onMoveDown,
   onLog,
   onSetValue,
+  onAssignSection,
   onSaveNote,
 }: {
   tracker: Tracker
@@ -35,12 +37,14 @@ export default function TrackerCard({
   latestValue: number | null
   today: string
   busy: boolean
+  sections: { id: string; title: string }[]
   canMoveUp: boolean
   canMoveDown: boolean
   onMoveUp: () => void
   onMoveDown: () => void
   onLog: (delta: number) => void
   onSetValue: (value: number) => void
+  onAssignSection: (sectionId: string | null) => void
   onSaveNote: (text: string) => void | Promise<void>
 }) {
   const done = todayTotal > 0
@@ -168,6 +172,26 @@ export default function TrackerCard({
           </div>
         )}
       </div>
+
+      {/* Section picker — only when sections exist */}
+      {sections.length > 0 && (
+        <div className="flex items-center gap-1.5 border-t border-zinc-100 px-3 py-1.5 text-xs text-zinc-400">
+          <FolderInput size={13} className="flex-none" />
+          <select
+            value={tracker.section_id ?? ''}
+            onChange={(e) => onAssignSection(e.target.value || null)}
+            aria-label={`Section for ${tracker.name}`}
+            className="-ml-0.5 cursor-pointer rounded bg-transparent py-0.5 pr-1 text-zinc-500 outline-none hover:text-zinc-800 focus:text-zinc-800"
+          >
+            <option value="">No section</option>
+            {sections.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.title}
+              </option>
+            ))}
+          </select>
+        </div>
+      )}
 
       {/* Today's note */}
       <div className="border-t border-zinc-100 px-3 py-2">

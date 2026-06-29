@@ -16,8 +16,19 @@ export type GoalDirection = 'more' | 'less' | 'neutral'
 // neutral counter, or a "did" streak on something you usually avoid.
 export type StreakSide = 'did' | 'skipped'
 
+// A collapsible group on the dashboard. Trackers reference it via section_id
+// (null = ungrouped). collapsed is persisted so it syncs across devices.
+export interface Section {
+  id: string
+  title: string
+  sort_order: number
+  collapsed: boolean
+  created_at: string
+}
+
 export interface Tracker {
   id: string
+  section_id: string | null
   name: string
   type: TrackerType
   color: string
