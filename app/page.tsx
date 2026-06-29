@@ -146,20 +146,29 @@ export default function Dashboard() {
     }
   }
 
-  // Persist sort_order = list position for any tracker whose position changed
-  // (so listTrackers() returns them in this order next load), reverting on fail.
-  async function persistTrackerOrder(reordered: Tracker[]) {
-    const before = trackers
-    setTrackers(reordered.map((t, i) => ({ ...t, sort_order: i })))
+  // Swap two items in an ordered list, renumber sort_order = position, and
+  // persist the rows that moved (optimistic; reverts on failure). Shared by
+  // tracker and section reordering.
+  async function reorderSwap<T extends { id: string; sort_order: number }>(
+    list: T[],
+    ai: number,
+    bi: number,
+    setList: (next: T[]) => void,
+    persist: (id: string, sortOrder: number) => Promise<unknown>,
+    errorMsg: string,
+  ) {
+    const reordered = [...list]
+    ;[reordered[ai], reordered[bi]] = [reordered[bi], reordered[ai]]
+    setList(reordered.map((x, i) => ({ ...x, sort_order: i })))
     try {
       await Promise.all(
         reordered
-          .map((t, i) => (t.sort_order === i ? null : updateTracker(t.id, { sort_order: i })))
-          .filter((p): p is ReturnType<typeof updateTracker> => p !== null),
+          .map((x, i) => (x.sort_order === i ? null : persist(x.id, i)))
+          .filter((p): p is Promise<unknown> => p !== null),
       )
     } catch {
-      setTrackers(before)
-      setError('Could not save the new order. Try again.')
+      setList(list)
+      setError(errorMsg)
     }
   }
 
@@ -172,9 +181,14 @@ export default function Dashboard() {
     if (!mate) return
     const ai = trackers.findIndex((x) => x.id === t.id)
     const bi = trackers.findIndex((x) => x.id === mate.id)
-    const reordered = [...trackers]
-    ;[reordered[ai], reordered[bi]] = [reordered[bi], reordered[ai]]
-    await persistTrackerOrder(reordered)
+    await reorderSwap(
+      trackers,
+      ai,
+      bi,
+      setTrackers,
+      (id, sort_order) => updateTracker(id, { sort_order }),
+      'Could not save the new order. Try again.',
+    )
   }
 
   // Assign a tracker to a section (or null to ungroup), optimistically.
@@ -241,20 +255,14 @@ export default function Dashboard() {
   async function moveSection(index: number, dir: -1 | 1) {
     const target = index + dir
     if (target < 0 || target >= sections.length) return
-    const before = sections
-    const reordered = [...sections]
-    ;[reordered[index], reordered[target]] = [reordered[target], reordered[index]]
-    setSections(reordered.map((s, i) => ({ ...s, sort_order: i })))
-    try {
-      await Promise.all(
-        reordered
-          .map((s, i) => (s.sort_order === i ? null : updateSection(s.id, { sort_order: i })))
-          .filter((p): p is ReturnType<typeof updateSection> => p !== null),
-      )
-    } catch {
-      setSections(before)
-      setError('Could not reorder sections. Try again.')
-    }
+    await reorderSwap(
+      sections,
+      index,
+      target,
+      setSections,
+      (id, sort_order) => updateSection(id, { sort_order }),
+      'Could not reorder sections. Try again.',
+    )
   }
 
   // One dashboard card; canMove* are relative to the tracker's own group.
@@ -310,9 +318,12 @@ export default function Dashboard() {
         <EmptyState onAdd={() => setShowAdd(true)} />
       ) : (
         <div>
-          {/* Ungrouped trackers, shown first with no header */}
+          {/* Ungrouped trackers, shown first with no header. A tracker whose
+              section_id doesn't resolve to a loaded section counts as ungrouped
+              so it can never silently disappear from the dashboard. */}
           {(() => {
-            const ungrouped = trackers.filter((t) => !t.section_id)
+            const sectionIds = new Set(sections.map((s) => s.id))
+            const ungrouped = trackers.filter((t) => !t.section_id || !sectionIds.has(t.section_id))
             return ungrouped.length > 0 ? (
               <div className="space-y-2">{ungrouped.map((t, i) => renderCard(t, ungrouped, i))}</div>
             ) : null
