@@ -7,23 +7,10 @@
 --    count/yes-no rows are unaffected (ints are valid numerics).
 alter table entries alter column value type numeric using value::numeric;
 
--- 2) Allow the new tracker type. Postgres can't edit a CHECK in place. Find the
---    existing check on `type` by its definition (its auto-generated name may
---    vary) and drop it, then add the 3-type check. Done in a DO block so we
---    don't risk leaving the old 2-type check in force (which would silently
---    reject every 'measure' insert).
-do $$
-declare cons text;
-begin
-  select conname into cons
-  from pg_constraint
-  where conrelid = 'trackers'::regclass
-    and contype = 'c'
-    and pg_get_constraintdef(oid) ilike '%type%in%';
-  if cons is not null then
-    execute format('alter table trackers drop constraint %I', cons);
-  end if;
-end $$;
-
+-- 2) Allow the new tracker type. Postgres can't edit a CHECK in place, so drop
+--    and recreate it. The column-level check on `type` gets Postgres's
+--    deterministic default name `trackers_type_check` (<table>_<column>_check),
+--    so we can drop it by name.
+alter table trackers drop constraint if exists trackers_type_check;
 alter table trackers add constraint trackers_type_check
   check (type in ('yesno', 'count', 'measure'));
