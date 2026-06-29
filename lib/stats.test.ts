@@ -9,6 +9,7 @@ import {
   currentStreak,
   longestStreak,
   summarize,
+  summarizeMeasure,
   chooseGranularity,
   buildBuckets,
   resolveRange,
@@ -127,6 +128,32 @@ describe('resolveRange', () => {
   })
   it('custom uses the supplied from/to', () => {
     expect(resolveRange('custom', today, since, custom)).toEqual({ start: custom.from, end: custom.to })
+  })
+})
+
+describe('summarizeMeasure', () => {
+  it('reports latest / average / min / max over daily readings', () => {
+    const entries = [entry('2026-06-18', 176), entry('2026-06-19', 175), entry('2026-06-21', 174)]
+    const m = summarizeMeasure(entries)
+    expect(m.latest).toBe(174)
+    expect(m.latestDay).toBe('2026-06-21')
+    expect(m.min).toBe(174)
+    expect(m.max).toBe(176)
+    expect(m.average).toBe(175)
+    expect(m.daysLogged).toBe(3)
+  })
+  it('is empty-safe', () => {
+    expect(summarizeMeasure([])).toMatchObject({ latest: null, latestDay: null, daysLogged: 0 })
+  })
+})
+
+describe('buildBuckets (avg)', () => {
+  const totals = dayTotals([entry('2026-06-01', 100), entry('2026-06-02', 200)])
+  it('averages only the days with a reading in a bucket', () => {
+    // Jun 1–7 weekly bucket: two readings (100, 200) → mean 150, not sum 300.
+    const { buckets } = buildBuckets(totals, '2026-06-01', '2026-07-20', 'avg')
+    expect(buckets[0].value).toBe(150)
+    expect(buckets[1].value).toBe(0) // no readings that week
   })
 })
 

@@ -20,6 +20,12 @@ function isMissingTable(error: { code?: string; message?: string }, table: strin
   return error.code === '42P01' || error.code === 'PGRST205' || (error.message ?? '').includes(table)
 }
 
+// The `value` column is numeric; PostgREST can serialize numeric as a string,
+// so coerce to a JS number for correct arithmetic (dayTotals, analytics).
+function toEntry(row: Entry): Entry {
+  return { ...row, value: Number(row.value) }
+}
+
 export async function listTrackers(): Promise<Tracker[]> {
   const { data, error } = await supabase
     .from('trackers')
@@ -91,30 +97,43 @@ export async function listEntries(trackerId: string): Promise<Entry[]> {
     .eq('tracker_id', trackerId)
     .order('logged_at', { ascending: true })
   if (error) throw error
-  return data ?? []
+  return (data ?? []).map(toEntry)
 }
 
 // Entries for ALL trackers on a single day — powers the dashboard's "today" totals.
 export async function listEntriesForDay(day: string): Promise<Entry[]> {
   const { data, error } = await supabase.from('entries').select('*').eq('day', day)
   if (error) throw error
-  return data ?? []
+  return (data ?? []).map(toEntry)
 }
 
-// Most recent logged day per tracker → { trackerId: 'YYYY-MM-DD' }. Powers the
-// dashboard's "days since last logged" hint. RLS scopes this to the user; we
-// only pull (tracker_id, day) and keep the first (latest) seen per tracker.
-export async function listLastEntryDays(): Promise<Record<string, string>> {
+// Most recent entry per tracker → { trackerId: { day, value } }. Powers the
+// dashboard's "days since last logged" hint and a measure card's latest reading.
+// RLS scopes this to the user; we pull (tracker_id, day, value) ordered newest
+// first and keep the first seen per tracker. Note `value` is a count day's last
+// tap, not its daily sum — fine for "days since" and for measure (1 row/day).
+export interface LatestEntry {
+  day: string
+  value: number
+}
+export async function listLatestEntries(): Promise<Record<string, LatestEntry>> {
   const { data, error } = await supabase
     .from('entries')
-    .select('tracker_id, day')
+    .select('tracker_id, day, value')
     .order('day', { ascending: false })
   if (error) throw error
-  const map: Record<string, string> = {}
+  const map: Record<string, LatestEntry> = {}
   for (const row of data ?? []) {
-    if (!(row.tracker_id in map)) map[row.tracker_id] = row.day
+    if (!(row.tracker_id in map)) map[row.tracker_id] = { day: row.day, value: Number(row.value) }
   }
   return map
+}
+
+// Set a 'measure' day to a single value (latest replaces): clear the day's
+// entries, then insert one. Not atomic, but a measure day only ever has 1 row.
+export async function setDayValue(trackerId: string, day: string, value: number): Promise<Entry> {
+  await clearDay(trackerId, day)
+  return addEntry(trackerId, day, value)
 }
 
 // Record one tap (+value) on a day.
@@ -125,7 +144,7 @@ export async function addEntry(trackerId: string, day: string, value = 1): Promi
     .select()
     .single()
   if (error) throw error
-  return data
+  return toEntry(data)
 }
 
 // Undo: remove the most recent tap for a tracker on a given day. Returns true

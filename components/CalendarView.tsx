@@ -44,6 +44,11 @@ export default function CalendarView({
     const total = totals[key] ?? 0
     const future = key > today
     if (future) return {}
+    // measure: a day is simply "has a reading" or not — no amount/goal tinting
+    // (weights don't scale meaningfully against a monthly max).
+    if (tracker.type === 'measure') {
+      return total > 0 ? { background: hexA(tracker.color, 0.45) } : {}
+    }
     if (tracker.goal_direction === 'less') {
       // clean day = good (green), logged day = the color (the thing happened)
       if (total === 0) return { background: '#22c55e22' }
@@ -135,6 +140,18 @@ export default function CalendarView({
 }
 
 function Legend({ tracker }: { tracker: Tracker }) {
+  if (tracker.type === 'measure') {
+    return (
+      <div className="mt-3 flex items-center gap-4 text-xs text-zinc-500">
+        <span className="flex items-center gap-1.5">
+          <span className="h-3 w-3 rounded bg-zinc-100" /> no reading
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="h-3 w-3 rounded" style={{ background: hexA(tracker.color, 0.45) }} /> logged
+        </span>
+      </div>
+    )
+  }
   if (tracker.goal_direction === 'less') {
     return (
       <div className="mt-3 flex items-center gap-4 text-xs text-zinc-500">

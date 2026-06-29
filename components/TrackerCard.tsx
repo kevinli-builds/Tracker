@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { Minus, Plus, Check, ChevronRight, ChevronUp, ChevronDown, StickyNote, Clock } from 'lucide-react'
 import type { Tracker } from '@/lib/types'
 import { daysBetween } from '@/lib/date'
+import { fmtNum } from '@/lib/format'
 
 // One row on the dashboard. `todayTotal` is the tracker's logged value for
 // today; `onLog` applies a delta (+1 / -1) with optimistic UI handled by the
@@ -16,6 +17,7 @@ export default function TrackerCard({
   todayTotal,
   note,
   lastDay,
+  latestValue,
   today,
   busy,
   canMoveUp,
@@ -23,12 +25,14 @@ export default function TrackerCard({
   onMoveUp,
   onMoveDown,
   onLog,
+  onSetValue,
   onSaveNote,
 }: {
   tracker: Tracker
   todayTotal: number
   note: string
   lastDay: string | null
+  latestValue: number | null
   today: string
   busy: boolean
   canMoveUp: boolean
@@ -36,6 +40,7 @@ export default function TrackerCard({
   onMoveUp: () => void
   onMoveDown: () => void
   onLog: (delta: number) => void
+  onSetValue: (value: number) => void
   onSaveNote: (text: string) => void | Promise<void>
 }) {
   const done = todayTotal > 0
@@ -49,7 +54,11 @@ export default function TrackerCard({
       ? done
         ? 'Done today'
         : 'Not yet today'
-      : `${todayTotal}${unit ? ' ' + unit : ''} today`
+      : tracker.type === 'measure'
+        ? latestValue != null
+          ? `${fmtNum(latestValue)}${unit ? ' ' + unit : ''}`
+          : 'No readings yet'
+        : `${todayTotal}${unit ? ' ' + unit : ''} today`
 
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(note)
@@ -128,6 +137,14 @@ export default function TrackerCard({
           >
             <Check size={22} />
           </button>
+        ) : tracker.type === 'measure' ? (
+          <MeasureField
+            unit={unit}
+            placeholder={latestValue != null ? fmtNum(latestValue) : 'Log'}
+            busy={busy}
+            color={tracker.color}
+            onSubmit={onSetValue}
+          />
         ) : (
           <div className="flex flex-none items-center gap-1">
             <button
@@ -201,6 +218,55 @@ export default function TrackerCard({
           </button>
         )}
       </div>
+    </div>
+  )
+}
+
+// Inline numeric entry for a 'measure' tracker: type a reading, Enter or the
+// check button logs it (latest replaces). Rejects blank/zero/non-numeric.
+function MeasureField({
+  unit,
+  placeholder,
+  busy,
+  color,
+  onSubmit,
+}: {
+  unit?: string
+  placeholder: string
+  busy: boolean
+  color: string
+  onSubmit: (value: number) => void
+}) {
+  const [val, setVal] = useState('')
+  function submit() {
+    const n = parseFloat(val)
+    if (Number.isNaN(n) || n === 0) return
+    onSubmit(n)
+    setVal('')
+  }
+  return (
+    <div className="flex flex-none items-center gap-1">
+      <input
+        type="number"
+        inputMode="decimal"
+        step="any"
+        value={val}
+        onChange={(e) => setVal(e.target.value)}
+        onKeyDown={(e) => e.key === 'Enter' && !busy && submit()}
+        placeholder={placeholder}
+        aria-label={`Log ${unit || 'value'}`}
+        disabled={busy}
+        className="w-16 rounded-lg border border-zinc-300 px-2 py-1.5 text-right text-sm tabular-nums outline-none focus:border-indigo-500"
+      />
+      <button
+        onClick={submit}
+        disabled={busy || !val.trim()}
+        aria-label="Log value"
+        className="flex h-11 w-11 flex-none items-center justify-center rounded-full text-white transition hover:opacity-90 disabled:opacity-30"
+        style={{ background: color }}
+      >
+        <Check size={20} />
+      </button>
     </div>
   )
 }

@@ -1,6 +1,10 @@
 // Shared types for the tracker app.
 
-export type TrackerType = 'yesno' | 'count'
+// 'yesno'   : done or not (≤1 entry/day)
+// 'count'   : tally taps; a day's value is the SUM of its entries
+// 'measure' : a free-form numeric reading per day, e.g. weight (latest replaces;
+//             one entry per day, so the day's value is that single number)
+export type TrackerType = 'yesno' | 'count' | 'measure'
 
 // Whether logging more of this is "good", "bad", or neither. Drives how
 // analytics frame a day (a green "good day" vs a red one) and the calendar tint.

@@ -2,8 +2,9 @@
 
 ## What this is
 A dead-simple personal habit/quantity tracker. The user adds their own trackers
-("Standard drinks", "Chia seeds", "Went outside") that are either **yes/no**
-(did it or not) or **count** (how many in a day). They tap to log, see a
+("Standard drinks", "Chia seeds", "Went outside", "Weight") that are **yes/no**
+(did it or not), **count** (how many in a day), or **measure** (a free-form
+numeric reading like weight, latest replaces). They tap to log, see a
 **calendar** of which days, and a few **analytics** (streaks, totals, a 30-day
 chart). Every day is editable after the fact and can carry a free-text note.
 The guiding spirit: a private, honest, low-friction personal tool.
@@ -45,7 +46,7 @@ app/
   globals.css       # Tailwind import + theme CSS vars
 components/
   AddTrackerModal.tsx  # Create form: name, type, goal direction, emoji, color, unit
-  TrackerCard.tsx      # Dashboard row: log controls, today's-note, reorder arrows, "days since" hint
+  TrackerCard.tsx      # Dashboard row: log controls (incl. measure number field), today's-note, reorder arrows, "days since" hint
   CalendarView.tsx     # Month grid; days are buttons → onSelectDay; note dots
   DayEditor.tsx        # Bottom-sheet for one day: value editor + note textarea
   Analytics.tsx        # Stat tiles + 30-day bar chart
@@ -53,14 +54,16 @@ components/
   SignInScreen.tsx     # "Sign in with Google" gate
 lib/
   supabase.ts       # Supabase client (throws if env missing)
-  db.ts             # ALL queries (trackers, entries, notes, resources); listLastEntryDays powers "days since"
+  db.ts             # ALL queries (trackers, entries, notes, resources); listLatestEntries powers "days since" + measure latest; setDayValue for measure
   useUser.ts        # useUser() hook + signInWithGoogle()/signOut()
-  types.ts          # Tracker, Entry, GoalDirection, DayTotals, TrackerResource
+  types.ts          # Tracker, Entry, TrackerType (yesno/count/measure), GoalDirection, DayTotals, TrackerResource
   date.ts           # LOCAL day-key helpers + dayLabel/daysInMonth/daysBetween — unit-tested
   date.test.ts
-  url.ts            # normalizeUrl (safe http(s) only) + hostLabel for resource links — unit-tested
+  url.ts            # normalizeUrl (safe http(s) only) + safeHref + hostLabel for resource links — unit-tested
   url.test.ts
-  stats.ts          # Pure analytics (dayTotals, streaks, summarize) — unit-tested
+  format.ts         # fmtNum (≤2-decimal display for measure values) — unit-tested
+  format.test.ts
+  stats.ts          # Pure analytics (dayTotals, streaks, summarize, summarizeMeasure, buildBuckets sum/avg) — unit-tested
   stats.test.ts
   constants.ts      # COLORS + EMOJIS palettes
 supabase/
@@ -69,13 +72,14 @@ supabase/
   03-notes.sql      # Migration: day_notes table (already applied to live DB)
   04-streak-side.sql # Migration: trackers.streak_side column (did/skipped)
   05-resources.sql  # Migration: tracker_resources table (links + notes)
+  06-measure.sql    # Migration: 'measure' type + entries.value int→numeric
 ```
 
 ## Data model
 | Table | Purpose |
 |---|---|
 | `trackers` | One per tracked thing: `user_id` (owner), name, `type` (`yesno`/`count`), `color`, `emoji`, `unit?`, `goal_direction` (`more`/`less`/`neutral`), `streak_side` (`did`/`skipped` — which side the streak counts), `sort_order`, `archived`, `created_at`. |
-| `entries` | One row per tap: `user_id`, `tracker_id`, `day` (LOCAL date), `value`. A count day = `SUM(value)`; a yes/no day = "done" if any row exists (kept to ≤1 row/day by the app). |
+| `entries` | One row per tap: `user_id`, `tracker_id`, `day` (LOCAL date), `value` (**numeric** — measures store decimals). A count day = `SUM(value)`; a yes/no day = "done" if any row exists; a **measure** day = one row holding the reading (latest replaces). |
 | `day_notes` | Optional note, unique per (`tracker_id`, `day`): `user_id`, `note`, `updated_at`. |
 | `tracker_resources` | Reference material attached to a tracker (not a day): `kind` (`link`/`note`), optional `title`, `url` (links), `body` (notes), `sort_order`. A check enforces link⇒url, note⇒body. |
 
@@ -126,11 +130,21 @@ supabase/
   position changed (optimistic, reverts on failure). The column predates this —
   no migration needed.
 - **"Days since" hint** (dashboard card): `daysBetween(lastDay, today)` where
-  `lastDay` comes from `db.ts` `listLastEntryDays()` (latest entry day per
-  tracker; pulls `(tracker_id, day)` for the user and keeps the first of a
+  `lastDay` comes from `db.ts` `listLatestEntries()` (latest `{day, value}` per
+  tracker; pulls `(tracker_id, day, value)` for the user and keeps the first of a
   `day desc` sort). Hidden when logged today (covered by `todayTotal`) or never
-  logged. It re-resolves from `todayTotal` automatically once you log today, so
-  the optimistic log doesn't need to touch `lastDays`.
+  logged. It re-resolves from `todayTotal` automatically once you log today.
+- **Measure trackers** (`type: 'measure'`, e.g. weight): a free-form numeric
+  reading per day, **latest replaces** (one entry/day) via `db.ts` `setDayValue`
+  (clear the day + insert one). Entry is a number field on the dashboard card,
+  the detail Today logger, and `DayEditor` — all reject blank/0/NaN. `entries.value`
+  is `numeric`; `db.ts` `toEntry` coerces it to a JS number (PostgREST can return
+  numeric as a string). Analytics swap the count/streak tiles for **latest /
+  average / lowest / highest** (`summarizeMeasure`), the chart **averages** each
+  bucket (`buildBuckets(..., 'avg')`) and scales bars from a baseline below the
+  min so small changes show. Streak side is hidden (a 0 day isn't "clean" for a
+  measure); the calendar tints logged days uniformly rather than by amount/goal.
+  Display values go through `lib/format.ts` `fmtNum`.
 - **Tracker resources** (`tracker_resources`, [`ResourcesSection`](components/ResourcesSection.tsx)):
   links + notes attached to a tracker, on the detail page below the Today logger.
   **Link URLs go through `lib/url.ts` `normalizeUrl`** — bare domains get
@@ -198,6 +212,9 @@ supabase/
   when a tracker hasn't been logged today
 - **Tracker resources** — attach titled links (e.g. a routine doc) and free-text
   notes to a tracker, on its detail page (needs migration `05-resources.sql`)
+- **Measure tracker type** — free-form numeric readings (e.g. weight), latest
+  replaces per day, with latest/avg/min/max + trend chart (needs migration
+  `06-measure.sql`, which also makes `entries.value` numeric)
 - **Edit any past day** via a calendar-tap bottom sheet (adjust value / toggle)
 - **Per-day notes**, with peak/dip **note callouts** on the daily chart; today's
   note is also editable inline from each **dashboard card** (`listNotesForDay`)

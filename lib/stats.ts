@@ -125,6 +125,37 @@ export function summarize(
   }
 }
 
+// ---- Measure stats --------------------------------------------------------
+
+export interface MeasureStats {
+  latest: number | null // most recent reading (null if none)
+  latestDay: string | null
+  average: number // mean of all daily readings
+  min: number
+  max: number
+  daysLogged: number // days with a reading
+}
+
+// Stats for a 'measure' tracker (e.g. weight). A measure day holds a single
+// value (latest replaces), so dayTotals' per-day sum is just that value.
+export function summarizeMeasure(entries: Entry[]): MeasureStats {
+  const totals = dayTotals(entries)
+  const days = Object.keys(totals).sort()
+  if (days.length === 0) {
+    return { latest: null, latestDay: null, average: 0, min: 0, max: 0, daysLogged: 0 }
+  }
+  const values = days.map((d) => totals[d])
+  const latestDay = days[days.length - 1]
+  return {
+    latest: totals[latestDay],
+    latestDay,
+    average: values.reduce((a, b) => a + b, 0) / values.length,
+    min: Math.min(...values),
+    max: Math.max(...values),
+    daysLogged: days.length,
+  }
+}
+
 // ---- Chart range bucketing -----------------------------------------------
 
 // A named chart range. 'custom' uses caller-supplied from/to dates.
@@ -171,17 +202,30 @@ export function chooseGranularity(spanDays: number): Granularity {
   return 'month'
 }
 
+// How to combine the days in a bucket: 'sum' for count trackers, 'avg' (mean of
+// the days that have a reading) for 'measure' trackers so a weight trend reads
+// right instead of piling up.
+export type BucketAgg = 'sum' | 'avg'
+
 // Bucket a day-total map across [start, end] into bars at an auto-chosen
 // granularity. Empty (inverted range) → no buckets.
 export function buildBuckets(
   totals: DayTotals,
   start: string,
   end: string,
+  agg: BucketAgg = 'sum',
 ): { granularity: Granularity; buckets: Bucket[] } {
   const days = dayRange(start, end)
   if (days.length === 0) return { granularity: 'day', buckets: [] }
   const granularity = chooseGranularity(days.length)
-  const sumDays = (ds: string[]) => ds.reduce((s, d) => s + (totals[d] ?? 0), 0)
+  // Combine a set of days. 'avg' ignores days without a reading (so a sparse
+  // weigh-in week averages the days you actually logged), 0 if none logged.
+  const combine = (ds: string[]): number => {
+    if (agg === 'sum') return ds.reduce((s, d) => s + (totals[d] ?? 0), 0)
+    const present = ds.filter((d) => d in totals)
+    if (present.length === 0) return 0
+    return present.reduce((s, d) => s + totals[d], 0) / present.length
+  }
 
   if (granularity === 'day') {
     return {
@@ -198,23 +242,24 @@ export function buildBuckets(
         key: chunk[0],
         start: chunk[0],
         end: chunk[chunk.length - 1],
-        value: sumDays(chunk),
+        value: combine(chunk),
       })
     }
     return { granularity, buckets }
   }
 
   // month: group consecutive days sharing a 'YYYY-MM' prefix.
-  const buckets: Bucket[] = []
+  const monthGroups: string[][] = []
   for (const d of days) {
-    const mKey = d.slice(0, 7)
-    const last = buckets[buckets.length - 1]
-    if (!last || last.key !== mKey) {
-      buckets.push({ key: mKey, start: d, end: d, value: totals[d] ?? 0 })
-    } else {
-      last.value += totals[d] ?? 0
-      last.end = d
-    }
+    const last = monthGroups[monthGroups.length - 1]
+    if (!last || last[0].slice(0, 7) !== d.slice(0, 7)) monthGroups.push([d])
+    else last.push(d)
   }
+  const buckets: Bucket[] = monthGroups.map((g) => ({
+    key: g[0].slice(0, 7),
+    start: g[0],
+    end: g[g.length - 1],
+    value: combine(g),
+  }))
   return { granularity, buckets }
 }

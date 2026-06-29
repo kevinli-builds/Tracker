@@ -1,20 +1,25 @@
 # Tracker
 
 A dead-simple personal tracker. Add anything you want to track — a yes/no habit
-("ate chia seeds today?") or a daily count ("standard drinks") — then tap to log
-it. See a calendar of which days you did it and a few analytics (streaks, totals,
-a 30-day chart).
+("ate chia seeds today?"), a daily count ("standard drinks"), or a measurement
+you type in ("weight") — then log it. See a calendar of which days you did it
+and a few analytics (streaks, totals/trends, a chart).
 
 Built with **Next.js 16 + Supabase + Tailwind v4**, deployed on **Vercel** —
 the same stack as MapCrowd.
 
 ## How it works
 
-- **Dashboard** (`/`) — every tracker as a row. Tap the check (yes/no) or the
-  `+ / −` (count) to log today. Tap the row to open its detail. Each card also
-  has a **today's-note** subsection — jot a quick free-text note for today right
-  from the dashboard. Use the **up/down arrows** to reorder your trackers, and a
-  subtle clock badge shows **how many days since** you last logged each one.
+- **Dashboard** (`/`) — every tracker as a row. Tap the check (yes/no), the
+  `+ / −` (count), or type a number (measure, e.g. weight) to log today. Tap the
+  row to open its detail. Each card also has a **today's-note** subsection — jot
+  a quick free-text note for today right from the dashboard. Use the **up/down
+  arrows** to reorder your trackers, and a subtle clock badge shows **how many
+  days since** you last logged each one.
+- **Measure trackers** — for things you record a number for (weight, resting
+  heart rate, %). You type the value (decimals OK); the latest reading replaces
+  that day's. Analytics show **latest / average / lowest / highest** and a trend
+  chart instead of totals.
 - **Detail** (`/t/[id]`) — a bigger "today" logger, a month **calendar** tinted
   by what you logged, and **analytics**: current/longest streak, good days,
   totals, trailing 7/30-day sums, and a bar chart with an **adjustable range**
@@ -70,7 +75,9 @@ own data (per-user RLS).
      table), [`supabase/04-streak-side.sql`](supabase/04-streak-side.sql)
      (adds the `trackers.streak_side` column), and
      [`supabase/05-resources.sql`](supabase/05-resources.sql) (adds the
-     `tracker_resources` table for links + notes). On a **fresh** DB,
+     `tracker_resources` table for links + notes), and
+     [`supabase/06-measure.sql`](supabase/06-measure.sql) (adds the `measure`
+     tracker type and makes `entries.value` numeric). On a **fresh** DB,
      `schema.sql` already includes all of these — skip them.
    - Supabase → **Authentication → Providers → Google**: make sure it's enabled.
    - Supabase → **Authentication → URL Configuration → Redirect URLs**: add
@@ -118,8 +125,9 @@ lib/
   types.ts          # Tracker, Entry, GoalDirection, TrackerResource types
   date.ts           # Local-date helpers (day keys are local, not UTC)
   url.ts            # Safe-URL normalize + host label for resource links
-  stats.ts          # Pure analytics: streaks, day totals, summaries
-  *.test.ts         # Unit tests (stats, date, url)
+  format.ts         # fmtNum — display formatting for measure values
+  stats.ts          # Pure analytics: streaks, day totals, summaries, measure stats
+  *.test.ts         # Unit tests (stats, date, url, format)
   constants.ts      # Color + emoji palettes
 supabase/
   schema.sql        # Full current schema — run once on a fresh project
@@ -127,6 +135,7 @@ supabase/
   03-notes.sql      # Migration: day_notes table
   04-streak-side.sql # Migration: trackers.streak_side column
   05-resources.sql  # Migration: tracker_resources table (links + notes)
+  06-measure.sql    # Migration: 'measure' type + numeric entry values
 ```
 
 ## Data model
@@ -134,7 +143,7 @@ supabase/
 | Table | What |
 |---|---|
 | `trackers` | One row per thing tracked: `user_id` owner, name, `type` (`yesno`/`count`), color, emoji, optional `unit`, `goal_direction`, `streak_side` (`did`/`skipped` — which side the streak counts). |
-| `entries` | One row per tap: `user_id`, `tracker_id`, `day` (local date), `value`. A count day is `SUM(value)`; a yes/no day is "done" if any row exists. |
+| `entries` | One row per tap: `user_id`, `tracker_id`, `day` (local date), `value` (numeric). A count day is `SUM(value)`; a yes/no day is "done" if any row exists; a measure day is a single reading (latest replaces). |
 | `day_notes` | Optional free-text note per (`tracker_id`, `day`). |
 | `tracker_resources` | Reference material on a tracker: `kind` (`link`/`note`), optional `title`, `url` (links), `body` (notes). |
 

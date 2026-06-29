@@ -4,6 +4,7 @@ import { useState } from 'react'
 import type { Tracker, Entry, StreakSide } from '@/lib/types'
 import {
   summarize,
+  summarizeMeasure,
   dayTotals,
   buildBuckets,
   defaultStreakSide,
@@ -12,6 +13,7 @@ import {
   type RangeId,
 } from '@/lib/stats'
 import { addDays, dayLabel, shortDay, shortMonth } from '@/lib/date'
+import { fmtNum } from '@/lib/format'
 
 type Annotation = { key: string; note: string; kind: 'peak' | 'dip' }
 
@@ -38,11 +40,14 @@ export default function Analytics({
   since: string
   notes: Record<string, string>
 }) {
+  const isCount = tracker.type === 'count'
+  const isMeasure = tracker.type === 'measure'
+
   const side: StreakSide = tracker.streak_side ?? defaultStreakSide(tracker.goal_direction)
   const s = summarize(entries, tracker.goal_direction, side, today, since)
+  const m = isMeasure ? summarizeMeasure(entries) : null
   const totals = dayTotals(entries)
   const unit = tracker.unit?.trim()
-  const isCount = tracker.type === 'count'
 
   // Chart range + the open (tapped) callout. Mobile has no hover, so a tap pins it.
   const [range, setRange] = useState<RangeId>('month')
@@ -53,8 +58,24 @@ export default function Analytics({
   // Resolve the selected range to a [start, end] window.
   const { start, end } = resolveRange(range, today, since, { from: customFrom, to: customTo })
 
-  const { granularity, buckets } = buildBuckets(totals, start, end)
+  // Measure trackers average each bucket (a weight trend), others sum (tallies).
+  const { granularity, buckets } = buildBuckets(totals, start, end, isMeasure ? 'avg' : 'sum')
   const chartMax = Math.max(1, ...buckets.map((b) => b.value))
+
+  // Bar height %. Count/yes-no scale from 0. Measure scales between a baseline
+  // just below the lowest reading and the highest, so small changes (e.g. a few
+  // lbs) are visible instead of a flat row of near-full bars.
+  const present = buckets.map((b) => b.value).filter((v) => v > 0)
+  const vMax = present.length ? Math.max(...present) : 1
+  const vMin = present.length ? Math.min(...present) : 0
+  const base = isMeasure ? Math.max(0, vMin - (vMax - vMin) * 0.25) : 0
+  const span = vMax - base
+  function barPct(v: number): number {
+    if (v === 0) return 2
+    if (!isMeasure) return Math.max(4, (v / chartMax) * 100)
+    if (span <= 0) return 60 // all readings equal → flat mid-height
+    return Math.max(8, ((v - base) / span) * 100)
+  }
 
   // Callouts: only on daily bars (a week/month bucket has no single note day).
   // An interior bar that's a strict local max (peak) or min (dip) AND carries a
@@ -78,38 +99,55 @@ export default function Analytics({
   const denseGap = buckets.length > 40
 
   function barTooltip(b: Bucket): string {
-    if (granularity === 'day') return `${b.start}: ${b.value}`
-    if (granularity === 'week') return `${shortDay(b.start)}–${shortDay(b.end)}: ${b.value}`
-    return `${shortMonth(b.key)}: ${b.value}`
+    const v = fmtNum(b.value)
+    if (granularity === 'day') return `${b.start}: ${v}`
+    if (granularity === 'week') return `${shortDay(b.start)}–${shortDay(b.end)}: ${v}`
+    return `${shortMonth(b.key)}: ${v}`
   }
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Stat label="Current streak" value={`${s.currentStreak}`} sub={streakSub} accent={tracker.color} />
-        <Stat label="Longest streak" value={`${s.longestStreak}`} sub={streakSub} />
-        <Stat
-          label={goodLabel}
-          value={`${s.goodDays}`}
-          sub={`of ${s.rangeDays} day${s.rangeDays === 1 ? '' : 's'}`}
-        />
-        {isCount ? (
-          <Stat label="Total" value={`${s.total}`} sub={unit || 'logged'} />
-        ) : (
-          <Stat label="Times done" value={`${s.daysLogged}`} sub="all time" />
-        )}
-      </div>
-
-      {isCount && (
-        <div className="grid grid-cols-3 gap-3">
-          <Stat label="Last 7 days" value={`${s.last7}`} sub={unit || ''} />
-          <Stat label="Last 30 days" value={`${s.last30}`} sub={unit || ''} />
+      {isMeasure && m ? (
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
           <Stat
-            label="Avg / logged day"
-            value={s.avgPerLoggedDay ? s.avgPerLoggedDay.toFixed(1) : '0'}
-            sub={unit || ''}
+            label="Latest"
+            value={m.latest != null ? fmtNum(m.latest) : '—'}
+            sub={m.latestDay ? dayLabel(m.latestDay) : unit || ''}
+            accent={tracker.color}
           />
+          <Stat label="Average" value={m.daysLogged ? fmtNum(m.average) : '—'} sub={unit || ''} />
+          <Stat label="Lowest" value={m.daysLogged ? fmtNum(m.min) : '—'} sub={unit || ''} />
+          <Stat label="Highest" value={m.daysLogged ? fmtNum(m.max) : '—'} sub={unit || ''} />
         </div>
+      ) : (
+        <>
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+            <Stat label="Current streak" value={`${s.currentStreak}`} sub={streakSub} accent={tracker.color} />
+            <Stat label="Longest streak" value={`${s.longestStreak}`} sub={streakSub} />
+            <Stat
+              label={goodLabel}
+              value={`${s.goodDays}`}
+              sub={`of ${s.rangeDays} day${s.rangeDays === 1 ? '' : 's'}`}
+            />
+            {isCount ? (
+              <Stat label="Total" value={`${s.total}`} sub={unit || 'logged'} />
+            ) : (
+              <Stat label="Times done" value={`${s.daysLogged}`} sub="all time" />
+            )}
+          </div>
+
+          {isCount && (
+            <div className="grid grid-cols-3 gap-3">
+              <Stat label="Last 7 days" value={`${s.last7}`} sub={unit || ''} />
+              <Stat label="Last 30 days" value={`${s.last30}`} sub={unit || ''} />
+              <Stat
+                label="Avg / logged day"
+                value={s.avgPerLoggedDay ? s.avgPerLoggedDay.toFixed(1) : '0'}
+                sub={unit || ''}
+              />
+            </div>
+          )}
+        </>
       )}
 
       {/* Range-adjustable bar chart — peaks/dips with a note get a callout pin */}
@@ -180,7 +218,7 @@ export default function Analytics({
                     <div
                       className="relative w-full rounded-sm"
                       style={{
-                        height: `${b.value === 0 ? 2 : Math.max(4, (b.value / chartMax) * 100)}%`,
+                        height: `${barPct(b.value)}%`,
                         background: b.value === 0 ? '#e4e4e7' : tracker.color,
                       }}
                     >
@@ -202,7 +240,7 @@ export default function Analytics({
                             <div className="flex items-center gap-1 text-[10px] font-medium uppercase tracking-wide text-zinc-400">
                               <span>{ann.kind === 'peak' ? '▲' : '▼'}</span>
                               <span>{dayLabel(b.key)}</span>
-                              <span className="text-zinc-500">· {b.value}{unit ? ` ${unit}` : ''}</span>
+                              <span className="text-zinc-500">· {fmtNum(b.value)}{unit ? ` ${unit}` : ''}</span>
                             </div>
                             <p className="mt-0.5 line-clamp-3 text-xs leading-snug text-zinc-100">{ann.note}</p>
                           </div>

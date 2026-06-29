@@ -12,6 +12,7 @@ import {
   addEntry,
   removeLastEntry,
   clearDay,
+  setDayValue,
   deleteTracker,
   updateTracker,
 } from '@/lib/db'
@@ -19,6 +20,7 @@ import { todayKey, toDayKey } from '@/lib/date'
 import { dayTotals, defaultStreakSide } from '@/lib/stats'
 import { useUser } from '@/lib/useUser'
 import { EMOJIS } from '@/lib/constants'
+import { fmtNum } from '@/lib/format'
 import type { Tracker, Entry, StreakSide } from '@/lib/types'
 import CalendarView from '@/components/CalendarView'
 import Analytics from '@/components/Analytics'
@@ -122,6 +124,22 @@ export default function TrackerDetail({ params }: { params: Promise<{ id: string
       }
     } catch {
       setError('Could not save that change. Try again.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // Set a measure day to a single reading (latest replaces): swap out any
+  // existing entries for that day locally and add the returned row.
+  async function setMeasure(day: string, value: number) {
+    if (!tracker || Number.isNaN(value) || value === 0) return
+    setBusy(true)
+    setError(null)
+    try {
+      const e = await setDayValue(tracker.id, day, value)
+      setEntries((list) => [...list.filter((x) => x.day !== day), e])
+    } catch {
+      setError('Could not save that reading. Try again.')
     } finally {
       setBusy(false)
     }
@@ -292,13 +310,23 @@ export default function TrackerDetail({ params }: { params: Promise<{ id: string
         <div>
           <h1 className="text-xl font-bold leading-tight">{tracker.name}</h1>
           <p className="text-sm text-zinc-500">
-            {tracker.type === 'yesno' ? 'Yes / no habit' : `Counting${unit ? ' ' + unit : ''}`}
+            {tracker.type === 'yesno'
+              ? 'Yes / no habit'
+              : tracker.type === 'measure'
+                ? `Measuring${unit ? ' ' + unit : ''}`
+                : `Counting${unit ? ' ' + unit : ''}`}
             {' · '}
-            {tracker.goal_direction === 'more'
-              ? 'more is better'
-              : tracker.goal_direction === 'less'
-                ? 'less is better'
-                : 'neutral'}
+            {tracker.type === 'measure'
+              ? tracker.goal_direction === 'more'
+                ? 'higher is better'
+                : tracker.goal_direction === 'less'
+                  ? 'lower is better'
+                  : 'tracking'
+              : tracker.goal_direction === 'more'
+                ? 'more is better'
+                : tracker.goal_direction === 'less'
+                  ? 'less is better'
+                  : 'neutral'}
           </p>
         </div>
       </div>
@@ -323,6 +351,14 @@ export default function TrackerDetail({ params }: { params: Promise<{ id: string
           >
             <Check size={22} /> {done ? 'Done today' : 'Mark done'}
           </button>
+        ) : tracker.type === 'measure' ? (
+          <MeasureToday
+            todayValue={todayTotal > 0 ? todayTotal : null}
+            unit={unit}
+            busy={busy}
+            color={tracker.color}
+            onSet={(v) => setMeasure(today, v)}
+          />
         ) : (
           <div className="flex items-center justify-center gap-5">
             <button
@@ -370,24 +406,27 @@ export default function TrackerDetail({ params }: { params: Promise<{ id: string
       <section>
         <div className="mb-2 flex items-center justify-between gap-2">
           <h2 className="text-sm font-semibold text-zinc-500">Analytics</h2>
-          <div className="flex items-center gap-1.5 text-[11px] text-zinc-400">
-            <span>Streak counts</span>
-            <div className="flex overflow-hidden rounded-full border border-zinc-200">
-              {(['did', 'skipped'] as StreakSide[]).map((sideOpt) => {
-                const active = (tracker.streak_side ?? defaultStreakSide(tracker.goal_direction)) === sideOpt
-                return (
-                  <button
-                    key={sideOpt}
-                    onClick={() => changeStreakSide(sideOpt)}
-                    className={`px-2.5 py-1 font-medium transition ${active ? 'text-white' : 'text-zinc-500 hover:bg-zinc-100'}`}
-                    style={active ? { background: tracker.color } : undefined}
-                  >
-                    {sideOpt === 'did' ? 'Did it' : 'Skipped'}
-                  </button>
-                )
-              })}
+          {/* Streak side is meaningless for a measure (a "clean" day isn't a 0 reading) */}
+          {tracker.type !== 'measure' && (
+            <div className="flex items-center gap-1.5 text-[11px] text-zinc-400">
+              <span>Streak counts</span>
+              <div className="flex overflow-hidden rounded-full border border-zinc-200">
+                {(['did', 'skipped'] as StreakSide[]).map((sideOpt) => {
+                  const active = (tracker.streak_side ?? defaultStreakSide(tracker.goal_direction)) === sideOpt
+                  return (
+                    <button
+                      key={sideOpt}
+                      onClick={() => changeStreakSide(sideOpt)}
+                      className={`px-2.5 py-1 font-medium transition ${active ? 'text-white' : 'text-zinc-500 hover:bg-zinc-100'}`}
+                      style={active ? { background: tracker.color } : undefined}
+                    >
+                      {sideOpt === 'did' ? 'Did it' : 'Skipped'}
+                    </button>
+                  )
+                })}
+              </div>
             </div>
-          </div>
+          )}
         </div>
         <Analytics tracker={tracker} entries={entries} today={today} since={since} notes={notes} />
       </section>
@@ -402,6 +441,7 @@ export default function TrackerDetail({ params }: { params: Promise<{ id: string
           busy={busy}
           onAdjust={(delta) => adjust(selectedDay, delta)}
           onSetDone={(d) => setDone(selectedDay, d)}
+          onSetValue={(v) => setMeasure(selectedDay, v)}
           onSaveNote={(text) => persistNote(selectedDay, text)}
           onClose={() => setSelectedDay(null)}
         />
@@ -441,5 +481,60 @@ export default function TrackerDetail({ params }: { params: Promise<{ id: string
         </div>
       )}
     </main>
+  )
+}
+
+// Today's logger for a measure tracker: shows today's reading (or —) and a
+// free-form field to set/update it (latest replaces). Rejects blank/zero/NaN.
+function MeasureToday({
+  todayValue,
+  unit,
+  busy,
+  color,
+  onSet,
+}: {
+  todayValue: number | null
+  unit?: string
+  busy: boolean
+  color: string
+  onSet: (value: number) => void
+}) {
+  const [val, setVal] = useState('')
+  function submit() {
+    const n = parseFloat(val)
+    if (Number.isNaN(n) || n === 0) return
+    onSet(n)
+    setVal('')
+  }
+  return (
+    <div>
+      <div className="mb-3 text-center">
+        <div className="text-4xl font-bold tabular-nums">{todayValue != null ? fmtNum(todayValue) : '—'}</div>
+        <div className="text-xs text-zinc-400">
+          {todayValue != null ? unit || 'today' : 'no reading today'}
+        </div>
+      </div>
+      <div className="flex items-center gap-2">
+        <input
+          type="number"
+          inputMode="decimal"
+          step="any"
+          value={val}
+          onChange={(e) => setVal(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && !busy && submit()}
+          placeholder={`${todayValue != null ? 'Update' : 'Enter'} ${unit || 'value'}`}
+          disabled={busy}
+          className="min-w-0 flex-1 rounded-xl border border-zinc-300 px-3 py-3 text-center text-lg tabular-nums outline-none focus:border-indigo-500"
+        />
+        <button
+          onClick={submit}
+          disabled={busy || !val.trim()}
+          className="rounded-xl px-5 py-3 font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
+          style={{ background: color }}
+        >
+          Log
+        </button>
+      </div>
+    </div>
   )
 }

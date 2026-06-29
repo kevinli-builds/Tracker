@@ -6,11 +6,13 @@ import {
   listTrackers,
   listEntriesForDay,
   listNotesForDay,
-  listLastEntryDays,
+  listLatestEntries,
   addEntry,
   removeLastEntry,
   saveNote,
+  setDayValue,
   updateTracker,
+  type LatestEntry,
 } from '@/lib/db'
 import { todayKey } from '@/lib/date'
 import { useUser, signOut } from '@/lib/useUser'
@@ -24,7 +26,7 @@ export default function Dashboard() {
   const [trackers, setTrackers] = useState<Tracker[]>([])
   const [totals, setTotals] = useState<Record<string, number>>({})
   const [notes, setNotes] = useState<Record<string, string>>({})
-  const [lastDays, setLastDays] = useState<Record<string, string>>({})
+  const [latest, setLatest] = useState<Record<string, LatestEntry>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showAdd, setShowAdd] = useState(false)
@@ -42,7 +44,7 @@ export default function Dashboard() {
           listTrackers(),
           listEntriesForDay(today),
           listNotesForDay(today),
-          listLastEntryDays(),
+          listLatestEntries(),
         ])
         if (!alive) return
         const map: Record<string, number> = {}
@@ -50,7 +52,7 @@ export default function Dashboard() {
         setTrackers(ts)
         setTotals(map)
         setNotes(ns)
-        setLastDays(last)
+        setLatest(last)
       } catch (e) {
         if (alive) setError(e instanceof Error ? e.message : 'Could not load your trackers.')
       } finally {
@@ -84,6 +86,29 @@ export default function Dashboard() {
     } catch {
       setTotals((m) => ({ ...m, [tracker.id]: prev })) // revert
       setError('Could not save that tap. Try again.')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  // Set today's reading for a measure tracker (latest replaces), optimistically.
+  async function setValue(tracker: Tracker, value: number) {
+    const prevTotal = totals[tracker.id] ?? 0
+    const prevLatest = latest[tracker.id]
+    setBusyId(tracker.id)
+    setTotals((m) => ({ ...m, [tracker.id]: value }))
+    setLatest((m) => ({ ...m, [tracker.id]: { day: today, value } }))
+    try {
+      await setDayValue(tracker.id, today, value)
+    } catch {
+      setTotals((m) => ({ ...m, [tracker.id]: prevTotal }))
+      setLatest((m) => {
+        const n = { ...m }
+        if (prevLatest) n[tracker.id] = prevLatest
+        else delete n[tracker.id]
+        return n
+      })
+      setError('Could not save that reading. Try again.')
     } finally {
       setBusyId(null)
     }
@@ -167,7 +192,8 @@ export default function Dashboard() {
               tracker={t}
               todayTotal={totals[t.id] ?? 0}
               note={notes[t.id] ?? ''}
-              lastDay={lastDays[t.id] ?? null}
+              lastDay={latest[t.id]?.day ?? null}
+              latestValue={latest[t.id]?.value ?? null}
               today={today}
               busy={busyId === t.id}
               canMoveUp={i > 0}
@@ -175,6 +201,7 @@ export default function Dashboard() {
               onMoveUp={() => move(i, -1)}
               onMoveDown={() => move(i, 1)}
               onLog={(d) => log(t, d)}
+              onSetValue={(v) => setValue(t, v)}
               onSaveNote={(text) => saveNoteFor(t, text)}
             />
           ))}

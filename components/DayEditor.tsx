@@ -4,10 +4,11 @@ import { useState } from 'react'
 import { X, Minus, Plus, Check } from 'lucide-react'
 import type { Tracker } from '@/lib/types'
 import { dayLabel } from '@/lib/date'
+import { fmtNum } from '@/lib/format'
 
-// Bottom-sheet editor for a single day: adjust the value (count) or toggle
-// done (yes/no), and edit a free-text note. Opens for any non-future day, so
-// it doubles as the "fix up a past day" surface.
+// Bottom-sheet editor for a single day: adjust the value (count), toggle done
+// (yes/no), or set a reading (measure), plus edit a free-text note. Opens for
+// any non-future day, so it doubles as the "fix up a past day" surface.
 export default function DayEditor({
   tracker,
   day,
@@ -16,6 +17,7 @@ export default function DayEditor({
   busy,
   onAdjust,
   onSetDone,
+  onSetValue,
   onSaveNote,
   onClose,
 }: {
@@ -26,15 +28,24 @@ export default function DayEditor({
   busy: boolean
   onAdjust: (delta: number) => void
   onSetDone: (done: boolean) => void
+  onSetValue: (value: number) => void
   onSaveNote: (text: string) => Promise<void> | void
   onClose: () => void
 }) {
   const [text, setText] = useState(note)
   const [savedNote, setSavedNote] = useState(note)
   const [savingNote, setSavingNote] = useState(false)
+  const [mval, setMval] = useState('')
   const unit = tracker.unit?.trim()
   const done = total > 0
   const noteDirty = text.trim() !== savedNote.trim()
+
+  function submitMeasure() {
+    const n = parseFloat(mval)
+    if (Number.isNaN(n) || n === 0) return
+    onSetValue(n)
+    setMval('')
+  }
 
   async function persistNote() {
     if (!noteDirty) return
@@ -79,6 +90,43 @@ export default function DayEditor({
           >
             <Check size={22} /> {done ? 'Done' : 'Mark done'}
           </button>
+        ) : tracker.type === 'measure' ? (
+          <div className="mb-5">
+            <div className="mb-3 text-center">
+              <div className="text-4xl font-bold tabular-nums">{done ? fmtNum(total) : '—'}</div>
+              <div className="text-xs text-zinc-400">{done ? unit || 'reading' : 'no reading'}</div>
+            </div>
+            <div className="flex items-center gap-2">
+              <input
+                type="number"
+                inputMode="decimal"
+                step="any"
+                value={mval}
+                onChange={(e) => setMval(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && !busy && submitMeasure()}
+                placeholder={`${done ? 'Update' : 'Enter'} ${unit || 'value'}`}
+                disabled={busy}
+                className="min-w-0 flex-1 rounded-xl border border-zinc-300 px-3 py-2.5 text-center text-lg tabular-nums outline-none focus:border-indigo-500"
+              />
+              <button
+                onClick={submitMeasure}
+                disabled={busy || !mval.trim()}
+                className="rounded-xl px-5 py-2.5 font-semibold text-white transition hover:opacity-90 disabled:opacity-50"
+                style={{ background: tracker.color }}
+              >
+                Set
+              </button>
+            </div>
+            {done && (
+              <button
+                onClick={() => onSetDone(false)}
+                disabled={busy}
+                className="mt-2 w-full text-center text-xs text-zinc-400 hover:text-red-600 disabled:opacity-50"
+              >
+                Clear this day’s reading
+              </button>
+            )}
+          </div>
         ) : (
           <div className="mb-5 flex items-center justify-center gap-5">
             <button

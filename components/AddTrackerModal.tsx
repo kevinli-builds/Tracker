@@ -45,9 +45,10 @@ export default function AddTrackerModal({
         type,
         color,
         emoji,
-        unit: type === 'count' ? unit.trim() || null : null,
+        unit: type === 'yesno' ? null : unit.trim() || null,
         goal_direction: goal,
-        streak_side: streakSide,
+        // a measure's streak is "days with a reading" — only 'did' makes sense
+        streak_side: type === 'measure' ? 'did' : streakSide,
       })
       onCreated(t)
     } catch (e) {
@@ -86,7 +87,7 @@ export default function AddTrackerModal({
 
         {/* Type */}
         <label className="mb-1 block text-sm font-medium text-zinc-600">How do you log it?</label>
-        <div className="mb-4 grid grid-cols-2 gap-2">
+        <div className="mb-4 grid grid-cols-3 gap-2">
           <TypeButton
             active={type === 'yesno'}
             title="Yes / No"
@@ -96,13 +97,19 @@ export default function AddTrackerModal({
           <TypeButton
             active={type === 'count'}
             title="Count"
-            sub="How many in a day"
+            sub="How many"
             onClick={() => setType('count')}
+          />
+          <TypeButton
+            active={type === 'measure'}
+            title="Measure"
+            sub="A number, e.g. weight"
+            onClick={() => setType('measure')}
           />
         </div>
 
-        {/* Unit (count only) */}
-        {type === 'count' && (
+        {/* Unit (count + measure) */}
+        {type !== 'yesno' && (
           <div className="mb-4">
             <label className="mb-1 block text-sm font-medium text-zinc-600">
               Unit <span className="font-normal text-zinc-400">(optional)</span>
@@ -110,21 +117,35 @@ export default function AddTrackerModal({
             <input
               value={unit}
               onChange={(e) => setUnit(e.target.value)}
-              placeholder="e.g. drinks, glasses, times"
+              placeholder={type === 'measure' ? 'e.g. lbs, kg, %' : 'e.g. drinks, glasses, times'}
               className="w-full rounded-lg border border-zinc-300 px-3 py-2 outline-none focus:border-indigo-500"
             />
           </div>
         )}
 
         {/* Goal direction */}
-        <label className="mb-1 block text-sm font-medium text-zinc-600">Is doing this good or bad for you?</label>
+        <label className="mb-1 block text-sm font-medium text-zinc-600">
+          {type === 'measure' ? 'Which direction is your goal?' : 'Is doing this good or bad for you?'}
+        </label>
         <div className="mb-4 grid grid-cols-3 gap-2">
-          <GoalButton active={goal === 'more'} title="Good" sub="more = 💚" onClick={() => pickGoal('more')} />
-          <GoalButton active={goal === 'less'} title="Bad" sub="less = 💚" onClick={() => pickGoal('less')} />
-          <GoalButton active={goal === 'neutral'} title="Neutral" sub="just count" onClick={() => pickGoal('neutral')} />
+          {type === 'measure' ? (
+            <>
+              <GoalButton active={goal === 'less'} title="Lower" sub="down 💚" onClick={() => pickGoal('less')} />
+              <GoalButton active={goal === 'more'} title="Higher" sub="up 💚" onClick={() => pickGoal('more')} />
+              <GoalButton active={goal === 'neutral'} title="Just track" sub="no goal" onClick={() => pickGoal('neutral')} />
+            </>
+          ) : (
+            <>
+              <GoalButton active={goal === 'more'} title="Good" sub="more = 💚" onClick={() => pickGoal('more')} />
+              <GoalButton active={goal === 'less'} title="Bad" sub="less = 💚" onClick={() => pickGoal('less')} />
+              <GoalButton active={goal === 'neutral'} title="Neutral" sub="just count" onClick={() => pickGoal('neutral')} />
+            </>
+          )}
         </div>
 
-        {/* Streak side */}
+        {/* Streak side — not meaningful for a measure (no "clean"/zero day) */}
+        {type !== 'measure' && (
+          <>
         <label className="mb-1 block text-sm font-medium text-zinc-600">Which streak do you want to celebrate?</label>
         <div className="mb-4 grid grid-cols-2 gap-2">
           <GoalButton
@@ -140,6 +161,8 @@ export default function AddTrackerModal({
             onClick={() => setStreakSide('skipped')}
           />
         </div>
+          </>
+        )}
 
         {/* Emoji */}
         <label className="mb-1 block text-sm font-medium text-zinc-600">Icon</label>

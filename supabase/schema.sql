@@ -14,7 +14,9 @@ create table if not exists trackers (
   name           text not null check (char_length(name) between 1 and 80),
   -- 'yesno'  : a day is either done or not (at most one entry per day)
   -- 'count'  : tally taps within a day (a day's value is SUM of its entries)
-  type           text not null check (type in ('yesno', 'count')),
+  -- 'measure': a free-form numeric reading per day, e.g. weight (latest replaces;
+  --            one entry per day, so the day's value is that single number)
+  type           text not null check (type in ('yesno', 'count', 'measure')),
   color          text not null default '#6366f1' check (color ~ '^#[0-9a-fA-F]{6}$'),
   emoji          text not null default '✅' check (char_length(emoji) <= 8),
   unit           text check (unit is null or char_length(unit) <= 24),
@@ -37,7 +39,9 @@ create table if not exists entries (
   user_id    uuid references auth.users(id) on delete cascade default auth.uid(),
   tracker_id uuid not null references trackers(id) on delete cascade,
   day        date not null,
-  value      int not null default 1 check (value <> 0),
+  -- numeric so 'measure' trackers can store decimals (e.g. weight 175.4);
+  -- count/yes-no rows just use whole numbers.
+  value      numeric not null default 1 check (value <> 0),
   logged_at  timestamptz not null default now()
 );
 
