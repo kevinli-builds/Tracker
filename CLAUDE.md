@@ -46,7 +46,7 @@ app/
   layout.tsx        # Root layout + viewport (viewport-fit=cover for safe-area)
   globals.css       # Tailwind import + theme CSS vars
 components/
-  AddTrackerModal.tsx  # Create form: name, type, goal direction, emoji, color, unit
+  AddTrackerModal.tsx  # Create OR edit form (pass `initial` + onSaved): name, subtitle, type, goal, streak, emoji, color, unit
   TrackerCard.tsx      # Dashboard row: log controls (incl. measure number field), today's-note, reorder arrows, "days since" hint
   CalendarView.tsx     # Month grid; days are buttons → onSelectDay; note dots
   DayEditor.tsx        # Bottom-sheet for one day: value editor + note textarea
@@ -130,8 +130,13 @@ supabase/
 - **Subtitle** (`trackers.subtitle`, migration 09): an optional one-line
   description shown under the name on the dashboard card and the detail header
   (click-to-edit there via `updateTracker`). Set at creation in `AddTrackerModal`.
+- **Editing a tracker**: the detail page's "Edit" button opens `AddTrackerModal`
+  with `initial={tracker}` (same form as create). Changing the **type** is
+  **non-destructive — existing entries stay** (the chosen "cut-over"); series
+  steps are managed on the detail page, not in the edit form. Also inline on the
+  detail page: emoji picker, subtitle (click-to-edit), streak-side toggle.
 - **Editing tracker settings** all go through `db.ts` `updateTracker(id, patch)`
-  (patches `name`/`subtitle`/`color`/`emoji`/`unit`/`goal_direction`/`streak_side`). The
+  (patches `name`/`subtitle`/`color`/`emoji`/`unit`/`goal_direction`/`streak_side`/`type`/`sort_order`/`section_id`). The
   detail header's icon tile is a button → inline emoji picker (same `EMOJIS`
   palette as the create modal) that calls `changeEmoji`, persisting optimistically
   with rollback on error — the same pattern as the streak-side toggle. `name`,
@@ -259,6 +264,10 @@ supabase/
 - **Series tracker type** — a daily-resetting checklist of steps (e.g. a routine)
   with an advance button, inline checklist, and a hold/right-click menu (needs
   migration `08-series.sql`)
+- **File uploads on resources** — attach docs/images (private Storage, signed
+  URLs) alongside links/notes (needs migration `10-storage.sql`)
+- **Edit a tracker** — an Edit button reopens the create form to change any
+  setting; type changes keep existing entries
 - **Edit any past day** via a calendar-tap bottom sheet (adjust value / toggle)
 - **Per-day notes**, with peak/dip **note callouts** on the daily chart; today's
   note is also editable inline from each **dashboard card** (`listNotesForDay`)

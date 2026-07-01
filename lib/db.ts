@@ -76,7 +76,16 @@ export async function updateTracker(
   patch: Partial<
     Pick<
       Tracker,
-      'streak_side' | 'goal_direction' | 'name' | 'subtitle' | 'color' | 'emoji' | 'unit' | 'sort_order' | 'section_id'
+      | 'streak_side'
+      | 'goal_direction'
+      | 'name'
+      | 'subtitle'
+      | 'type'
+      | 'color'
+      | 'emoji'
+      | 'unit'
+      | 'sort_order'
+      | 'section_id'
     >
   >,
 ): Promise<Tracker> {

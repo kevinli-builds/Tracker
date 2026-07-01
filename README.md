@@ -46,6 +46,9 @@ the same stack as MapCrowd.
   that day's value (or toggles yes/no) and edits a free-text **note** for the
   day. Days with a note show a dot. Backfilling earlier days extends analytics
   back to the earliest logged day, so honest backfilling still counts.
+- **Edit a tracker** — the **Edit** button on a tracker's page reopens the form
+  to change any setting (name, description, type, icon, color, unit, goal…).
+  Changing the type is non-destructive: your existing entries are kept.
 - **Subtitle** — give any tracker an optional one-line description that shows
   under its name (handy inside a group, e.g. a note on each stretch in a stretch
   routine). Set it when creating a tracker, or click it on the tracker's page.

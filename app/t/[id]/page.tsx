@@ -33,6 +33,7 @@ import Analytics from '@/components/Analytics'
 import DayEditor from '@/components/DayEditor'
 import StepChecklist from '@/components/StepChecklist'
 import ResourcesSection from '@/components/ResourcesSection'
+import AddTrackerModal from '@/components/AddTrackerModal'
 import SignInScreen from '@/components/SignInScreen'
 
 export default function TrackerDetail({ params }: { params: Promise<{ id: string }> }) {
@@ -51,6 +52,7 @@ export default function TrackerDetail({ params }: { params: Promise<{ id: string
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [editingEmoji, setEditingEmoji] = useState(false)
   const [editingSubtitle, setEditingSubtitle] = useState(false)
+  const [editingTracker, setEditingTracker] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const today = todayKey()
@@ -372,12 +374,20 @@ export default function TrackerDetail({ params }: { params: Promise<{ id: string
         >
           <ArrowLeft size={16} /> Back
         </Link>
-        <button
-          onClick={() => setConfirmDelete(true)}
-          className="-my-1 flex items-center gap-1 py-2 pl-2 text-sm text-zinc-400 hover:text-red-600"
-        >
-          <Trash2 size={16} /> Delete
-        </button>
+        <div className="-my-1 flex items-center gap-1">
+          <button
+            onClick={() => setEditingTracker(true)}
+            className="flex items-center gap-1 py-2 pl-2 text-sm text-zinc-500 hover:text-indigo-600"
+          >
+            <Pencil size={15} /> Edit
+          </button>
+          <button
+            onClick={() => setConfirmDelete(true)}
+            className="flex items-center gap-1 py-2 pl-2 text-sm text-zinc-400 hover:text-red-600"
+          >
+            <Trash2 size={16} /> Delete
+          </button>
+        </div>
       </div>
 
       {/* Header */}
@@ -586,6 +596,18 @@ export default function TrackerDetail({ params }: { params: Promise<{ id: string
         </div>
         <Analytics tracker={tracker} entries={entries} today={today} since={since} notes={notes} />
       </section>
+
+      {/* Edit tracker */}
+      {editingTracker && (
+        <AddTrackerModal
+          initial={tracker}
+          onClose={() => setEditingTracker(false)}
+          onSaved={(t) => {
+            setTracker(t)
+            setEditingTracker(false)
+          }}
+        />
+      )}
 
       {/* Per-day editor (opened by tapping a calendar day or "Add note") */}
       {selectedDay && (

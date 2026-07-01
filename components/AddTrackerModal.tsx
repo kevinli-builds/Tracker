@@ -2,26 +2,33 @@
 
 import { useState } from 'react'
 import { X, Plus, GripVertical } from 'lucide-react'
-import { createTracker, createStep } from '@/lib/db'
+import { createTracker, createStep, updateTracker } from '@/lib/db'
 import { defaultStreakSide } from '@/lib/stats'
 import { COLORS, EMOJIS } from '@/lib/constants'
 import type { Tracker, TrackerType, GoalDirection, StreakSide, TrackerStep } from '@/lib/types'
 
+// Create or (when `initial` is set) edit a tracker. Editing keeps existing
+// entries even if the type changes — the "cut-over" is non-destructive.
 export default function AddTrackerModal({
   onClose,
   onCreated,
+  initial,
+  onSaved,
 }: {
   onClose: () => void
-  onCreated: (t: Tracker, steps: TrackerStep[]) => void
+  onCreated?: (t: Tracker, steps: TrackerStep[]) => void
+  initial?: Tracker
+  onSaved?: (t: Tracker) => void
 }) {
-  const [name, setName] = useState('')
-  const [subtitle, setSubtitle] = useState('')
-  const [type, setType] = useState<TrackerType>('yesno')
-  const [goal, setGoal] = useState<GoalDirection>('more')
-  const [streakSide, setStreakSide] = useState<StreakSide>('did')
-  const [emoji, setEmoji] = useState(EMOJIS[0])
-  const [color, setColor] = useState(COLORS[0])
-  const [unit, setUnit] = useState('')
+  const isEdit = !!initial
+  const [name, setName] = useState(initial?.name ?? '')
+  const [subtitle, setSubtitle] = useState(initial?.subtitle ?? '')
+  const [type, setType] = useState<TrackerType>(initial?.type ?? 'yesno')
+  const [goal, setGoal] = useState<GoalDirection>(initial?.goal_direction ?? 'more')
+  const [streakSide, setStreakSide] = useState<StreakSide>(initial?.streak_side ?? 'did')
+  const [emoji, setEmoji] = useState(initial?.emoji ?? EMOJIS[0])
+  const [color, setColor] = useState(initial?.color ?? COLORS[0])
+  const [unit, setUnit] = useState(initial?.unit ?? '')
   const [steps, setSteps] = useState<string[]>(['', ''])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -42,28 +49,37 @@ export default function AddTrackerModal({
       return
     }
     const stepLabels = steps.map((s) => s.trim()).filter(Boolean)
-    if (isSeries && stepLabels.length === 0) {
+    if (!isEdit && isSeries && stepLabels.length === 0) {
       setError('Add at least one step.')
       return
     }
     setSaving(true)
     setError(null)
+    // Fields shared by create + edit (series ignores unit/goal/streak choices).
+    const fields = {
+      name: trimmed,
+      subtitle: subtitle.trim() || null,
+      type,
+      color,
+      emoji,
+      unit: type === 'yesno' || isSeries ? null : unit.trim() || null,
+      // series: more steps done is the win; streak counts days you did it
+      goal_direction: isSeries ? ('more' as GoalDirection) : goal,
+      streak_side: type === 'measure' || isSeries ? ('did' as StreakSide) : streakSide,
+    }
     try {
-      const t = await createTracker({
-        name: trimmed,
-        subtitle: subtitle.trim() || null,
-        type,
-        color,
-        emoji,
-        unit: type === 'yesno' || isSeries ? null : unit.trim() || null,
-        // series: more steps done is the win; streak counts days you did it
-        goal_direction: isSeries ? 'more' : goal,
-        streak_side: type === 'measure' || isSeries ? 'did' : streakSide,
-      })
-      const created = isSeries
-        ? await Promise.all(stepLabels.map((label, i) => createStep(t.id, label, i)))
-        : []
-      onCreated(t, created)
+      if (isEdit) {
+        // Non-destructive: entries stay even if the type changed. Series steps
+        // are managed on the detail page, not here.
+        const updated = await updateTracker(initial.id, fields)
+        onSaved?.(updated)
+      } else {
+        const t = await createTracker(fields)
+        const created = isSeries
+          ? await Promise.all(stepLabels.map((label, i) => createStep(t.id, label, i)))
+          : []
+        onCreated?.(t, created)
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save. Check your connection.')
       setSaving(false)
@@ -81,7 +97,7 @@ export default function AddTrackerModal({
       >
         <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-zinc-200 sm:hidden" />
         <div className="mb-4 flex items-center justify-between">
-          <h2 className="text-lg font-semibold">New tracker</h2>
+          <h2 className="text-lg font-semibold">{isEdit ? 'Edit tracker' : 'New tracker'}</h2>
           <button onClick={onClose} className="rounded-full p-1 text-zinc-400 hover:bg-zinc-100">
             <X size={20} />
           </button>
@@ -135,8 +151,13 @@ export default function AddTrackerModal({
           />
         </div>
 
-        {/* Steps editor (series only) */}
-        {isSeries && (
+        {/* Steps: created here for a new series; managed on the detail page when editing */}
+        {isSeries && isEdit && (
+          <p className="mb-4 rounded-lg bg-zinc-50 px-3 py-2 text-xs text-zinc-500">
+            Manage this series’ steps on the tracker’s page (the “Steps” section).
+          </p>
+        )}
+        {isSeries && !isEdit && (
           <div className="mb-4">
             <label className="mb-1 block text-sm font-medium text-zinc-600">
               Steps <span className="font-normal text-zinc-400">(in order)</span>
@@ -274,7 +295,7 @@ export default function AddTrackerModal({
           disabled={saving}
           className="w-full rounded-lg bg-indigo-600 py-2.5 font-medium text-white hover:bg-indigo-700 disabled:opacity-50"
         >
-          {saving ? 'Creating…' : 'Create tracker'}
+          {saving ? 'Saving…' : isEdit ? 'Save changes' : 'Create tracker'}
         </button>
       </div>
     </div>
