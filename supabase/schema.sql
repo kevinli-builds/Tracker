@@ -31,7 +31,9 @@ create table if not exists trackers (
   -- 'count'  : tally taps within a day (a day's value is SUM of its entries)
   -- 'measure': a free-form numeric reading per day, e.g. weight (latest replaces;
   --            one entry per day, so the day's value is that single number)
-  type           text not null check (type in ('yesno', 'count', 'measure')),
+  -- 'series' : an ordered checklist of steps that resets daily (tracker_steps);
+  --            a checked step is an entry tagged with step_id (day total = #done)
+  type           text not null check (type in ('yesno', 'count', 'measure', 'series')),
   color          text not null default '#6366f1' check (color ~ '^#[0-9a-fA-F]{6}$'),
   emoji          text not null default '✅' check (char_length(emoji) <= 8),
   unit           text check (unit is null or char_length(unit) <= 24),
@@ -47,21 +49,37 @@ create table if not exists trackers (
 );
 
 -- ---------------------------------------------------------------------------
+-- tracker_steps: ordered steps for a 'series' tracker (e.g. night routine).
+-- ---------------------------------------------------------------------------
+create table if not exists tracker_steps (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid references auth.users(id) on delete cascade default auth.uid(),
+  tracker_id uuid not null references trackers(id) on delete cascade,
+  label      text not null check (char_length(label) between 1 and 120),
+  sort_order int not null default 0,
+  created_at timestamptz not null default now()
+);
+create index if not exists tracker_steps_tracker_idx on tracker_steps (tracker_id);
+
+-- ---------------------------------------------------------------------------
 -- entries: one row per tap. day is the user's LOCAL calendar date.
 -- ---------------------------------------------------------------------------
 create table if not exists entries (
   id         uuid primary key default gen_random_uuid(),
   user_id    uuid references auth.users(id) on delete cascade default auth.uid(),
   tracker_id uuid not null references trackers(id) on delete cascade,
+  -- set for a 'series' step check; null for yes-no/count/measure entries.
+  step_id    uuid references tracker_steps(id) on delete cascade,
   day        date not null,
   -- numeric so 'measure' trackers can store decimals (e.g. weight 175.4);
-  -- count/yes-no rows just use whole numbers.
+  -- count/yes-no/series rows just use whole numbers.
   value      numeric not null default 1 check (value <> 0),
   logged_at  timestamptz not null default now()
 );
 
 create index if not exists entries_tracker_day_idx on entries (tracker_id, day);
 create index if not exists entries_day_idx on entries (day);
+create index if not exists entries_step_idx on entries (step_id);
 create index if not exists trackers_user_idx on trackers (user_id);
 create index if not exists entries_user_idx on entries (user_id);
 create index if not exists trackers_section_idx on trackers (section_id);
@@ -133,5 +151,11 @@ create policy day_notes_own on day_notes
 alter table tracker_resources enable row level security;
 drop policy if exists tracker_resources_own on tracker_resources;
 create policy tracker_resources_own on tracker_resources
+  for all to authenticated
+  using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+alter table tracker_steps enable row level security;
+drop policy if exists tracker_steps_own on tracker_steps;
+create policy tracker_steps_own on tracker_steps
   for all to authenticated
   using (auth.uid() = user_id) with check (auth.uid() = user_id);

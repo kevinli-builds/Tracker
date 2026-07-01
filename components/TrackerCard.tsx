@@ -1,11 +1,17 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useRef, type ReactNode } from 'react'
 import Link from 'next/link'
-import { Minus, Plus, Check, ChevronRight, ChevronUp, ChevronDown, StickyNote, Clock, FolderInput } from 'lucide-react'
-import type { Tracker } from '@/lib/types'
+import { useRouter } from 'next/navigation'
+import {
+  Minus, Plus, Check, ChevronRight, ChevronUp, ChevronDown, StickyNote, Clock,
+  FolderInput, ListChecks, RotateCcw, CheckCheck, ExternalLink,
+} from 'lucide-react'
+import type { Tracker, TrackerStep } from '@/lib/types'
 import { daysBetween } from '@/lib/date'
 import { fmtNum, parseMeasure } from '@/lib/format'
+import { seriesProgress } from '@/lib/stats'
+import StepChecklist from './StepChecklist'
 
 // One row on the dashboard. `todayTotal` is the tracker's logged value for
 // today; `onLog` applies a delta (+1 / -1) with optimistic UI handled by the
@@ -21,6 +27,8 @@ export default function TrackerCard({
   today,
   busy,
   sections,
+  steps,
+  checkedStepIds,
   canMoveUp,
   canMoveDown,
   onMoveUp,
@@ -28,6 +36,10 @@ export default function TrackerCard({
   onLog,
   onSetValue,
   onAssignSection,
+  onCheckNext,
+  onToggleStep,
+  onResetSteps,
+  onCheckAll,
   onSaveNote,
 }: {
   tracker: Tracker
@@ -38,6 +50,8 @@ export default function TrackerCard({
   today: string
   busy: boolean
   sections: { id: string; title: string }[]
+  steps: TrackerStep[]
+  checkedStepIds: Set<string>
   canMoveUp: boolean
   canMoveDown: boolean
   onMoveUp: () => void
@@ -45,10 +59,17 @@ export default function TrackerCard({
   onLog: (delta: number) => void
   onSetValue: (value: number) => void
   onAssignSection: (sectionId: string | null) => void
+  onCheckNext: () => void
+  onToggleStep: (stepId: string) => void
+  onResetSteps: () => void
+  onCheckAll: () => void
   onSaveNote: (text: string) => void | Promise<void>
 }) {
+  const router = useRouter()
   const done = todayTotal > 0
   const unit = tracker.unit?.trim()
+  const isSeries = tracker.type === 'series'
+  const progress = seriesProgress(steps, checkedStepIds)
 
   // Whole days since this tracker was last logged. Null when it was logged today
   // (todayTotal covers that) or never logged at all.
@@ -62,10 +83,19 @@ export default function TrackerCard({
         ? latestValue != null
           ? `${fmtNum(latestValue)}${unit ? ' ' + unit : ''}`
           : 'No readings yet'
-        : `${todayTotal}${unit ? ' ' + unit : ''} today`
+        : isSeries
+          ? progress.total === 0
+            ? 'No steps yet'
+            : progress.complete
+              ? 'All done today'
+              : `Next: ${progress.next?.label ?? ''}`
+          : `${todayTotal}${unit ? ' ' + unit : ''} today`
 
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState(note)
+  const [expanded, setExpanded] = useState(false)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const longPress = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   function openEditor() {
     setDraft(note)
@@ -76,9 +106,57 @@ export default function TrackerCard({
     setEditing(false)
   }
 
+  // Hold-menu (series only): right-click or ~500ms long-press opens it.
+  function onContext(e: React.MouseEvent) {
+    if (!isSeries) return
+    e.preventDefault()
+    setMenuOpen(true)
+  }
+  function touchStart() {
+    if (!isSeries) return
+    longPress.current = setTimeout(() => setMenuOpen(true), 500)
+  }
+  function touchCancel() {
+    if (longPress.current) {
+      clearTimeout(longPress.current)
+      longPress.current = null
+    }
+  }
+
+  const head = (
+    <>
+      <span
+        className="flex h-11 w-11 flex-none items-center justify-center rounded-lg text-xl"
+        style={{ background: tracker.color + '22' }}
+      >
+        {tracker.emoji}
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block truncate font-medium">{tracker.name}</span>
+        <span className="flex items-center gap-1.5 text-xs text-zinc-500">
+          <span className="truncate">{statusText}</span>
+          {sinceDays != null && sinceDays >= 1 && (
+            <span
+              className="flex flex-none items-center gap-0.5 text-zinc-400"
+              title={`Last logged ${sinceDays === 1 ? 'yesterday' : `${sinceDays} days ago`}`}
+            >
+              <Clock size={11} /> {sinceDays}d
+            </span>
+          )}
+        </span>
+      </span>
+    </>
+  )
+
   return (
-    <div className="rounded-xl bg-white shadow-sm ring-1 ring-black/5">
-      <div className="flex items-center gap-2 p-3">
+    <div className="relative rounded-xl bg-white shadow-sm ring-1 ring-black/5">
+      <div
+        className="flex items-center gap-2 p-3"
+        onContextMenu={onContext}
+        onTouchStart={touchStart}
+        onTouchEnd={touchCancel}
+        onTouchMove={touchCancel}
+      >
         {/* Reorder handles — the active arrow hides on the first/last row */}
         <div className="-ml-1 flex flex-none flex-col">
           <button
@@ -99,33 +177,29 @@ export default function TrackerCard({
           </button>
         </div>
 
-        <Link
-          href={`/t/${tracker.id}`}
-          className="flex min-w-0 flex-1 items-center gap-3"
-          aria-label={`Open ${tracker.name}`}
-        >
-          <span
-            className="flex h-11 w-11 flex-none items-center justify-center rounded-lg text-xl"
-            style={{ background: tracker.color + '22' }}
+        {/* Series cards expand an inline checklist on tap; others link to detail */}
+        {isSeries ? (
+          <button
+            onClick={() => setExpanded((v) => !v)}
+            aria-expanded={expanded}
+            className="flex min-w-0 flex-1 items-center gap-3 text-left"
           >
-            {tracker.emoji}
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block truncate font-medium">{tracker.name}</span>
-            <span className="flex items-center gap-1.5 text-xs text-zinc-500">
-              <span className="truncate">{statusText}</span>
-              {sinceDays != null && sinceDays >= 1 && (
-                <span
-                  className="flex flex-none items-center gap-0.5 text-zinc-400"
-                  title={`Last logged ${sinceDays === 1 ? 'yesterday' : `${sinceDays} days ago`}`}
-                >
-                  <Clock size={11} /> {sinceDays}d
-                </span>
-              )}
-            </span>
-          </span>
-          <ChevronRight size={16} className="flex-none text-zinc-300" />
-        </Link>
+            {head}
+            <ChevronDown
+              size={16}
+              className={`flex-none text-zinc-300 transition-transform ${expanded ? 'rotate-180' : ''}`}
+            />
+          </button>
+        ) : (
+          <Link
+            href={`/t/${tracker.id}`}
+            className="flex min-w-0 flex-1 items-center gap-3"
+            aria-label={`Open ${tracker.name}`}
+          >
+            {head}
+            <ChevronRight size={16} className="flex-none text-zinc-300" />
+          </Link>
+        )}
 
         {/* Logging controls */}
         {tracker.type === 'yesno' ? (
@@ -149,6 +223,19 @@ export default function TrackerCard({
             color={tracker.color}
             onSubmit={onSetValue}
           />
+        ) : isSeries ? (
+          <button
+            onClick={onCheckNext}
+            disabled={busy || progress.complete || progress.total === 0}
+            aria-label={progress.complete ? 'All steps done' : `Check off ${progress.next?.label ?? 'next step'}`}
+            className="flex h-11 flex-none items-center gap-1.5 rounded-full px-3.5 text-sm font-semibold text-white transition hover:opacity-90 disabled:opacity-40"
+            style={{ background: tracker.color }}
+          >
+            <Check size={18} />
+            <span className="tabular-nums">
+              {progress.done}/{progress.total}
+            </span>
+          </button>
         ) : (
           <div className="flex flex-none items-center gap-1">
             <button
@@ -172,6 +259,60 @@ export default function TrackerCard({
           </div>
         )}
       </div>
+
+      {/* Series: inline checklist (expand on tap / via the hold-menu) */}
+      {isSeries && expanded && (
+        <div className="border-t border-zinc-100 px-2 py-2">
+          <StepChecklist
+            steps={steps}
+            checkedIds={checkedStepIds}
+            busy={busy}
+            color={tracker.color}
+            onToggle={onToggleStep}
+          />
+        </div>
+      )}
+
+      {/* Hold-menu (right-click / long-press on a series card) */}
+      {menuOpen && (
+        <>
+          <div className="fixed inset-0 z-20" onClick={() => setMenuOpen(false)} />
+          <div className="absolute right-2 top-12 z-30 w-48 overflow-hidden rounded-xl bg-white py-1 text-sm shadow-xl ring-1 ring-black/10">
+            <MenuItem
+              icon={<ListChecks size={15} />}
+              label="Reveal checklist"
+              onClick={() => {
+                setExpanded(true)
+                setMenuOpen(false)
+              }}
+            />
+            <MenuItem
+              icon={<RotateCcw size={15} />}
+              label="Reset today’s checks"
+              onClick={() => {
+                onResetSteps()
+                setMenuOpen(false)
+              }}
+            />
+            <MenuItem
+              icon={<CheckCheck size={15} />}
+              label="Mark all done"
+              onClick={() => {
+                onCheckAll()
+                setMenuOpen(false)
+              }}
+            />
+            <MenuItem
+              icon={<ExternalLink size={15} />}
+              label="Open tracker page"
+              onClick={() => {
+                setMenuOpen(false)
+                router.push(`/t/${tracker.id}`)
+              }}
+            />
+          </div>
+        </>
+      )}
 
       {/* Section picker — only when sections exist */}
       {sections.length > 0 && (
@@ -243,6 +384,18 @@ export default function TrackerCard({
         )}
       </div>
     </div>
+  )
+}
+
+function MenuItem({ icon, label, onClick }: { icon: ReactNode; label: string; onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex w-full items-center gap-2.5 px-3 py-2 text-left text-zinc-700 hover:bg-zinc-50"
+    >
+      <span className="flex-none text-zinc-400">{icon}</span>
+      {label}
+    </button>
   )
 }
 

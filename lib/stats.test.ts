@@ -10,10 +10,12 @@ import {
   longestStreak,
   summarize,
   summarizeMeasure,
+  seriesProgress,
   chooseGranularity,
   buildBuckets,
   resolveRange,
 } from './stats'
+import type { TrackerStep } from './types'
 
 function entry(day: string, value = 1): Entry {
   return { id: day + value + Math.random(), tracker_id: 't', day, value, logged_at: day }
@@ -154,6 +156,36 @@ describe('buildBuckets (avg)', () => {
     const { buckets } = buildBuckets(totals, '2026-06-01', '2026-07-20', 'avg')
     expect(buckets[0].value).toBe(150)
     expect(buckets[1].value).toBe(0) // no readings that week
+  })
+})
+
+describe('seriesProgress', () => {
+  const step = (id: string, sort_order: number): TrackerStep => ({
+    id,
+    tracker_id: 't',
+    label: id,
+    sort_order,
+    created_at: '',
+  })
+  const steps = [step('a', 0), step('b', 1), step('c', 2)]
+
+  it('reports done/total and the next unchecked step in order', () => {
+    const p = seriesProgress(steps, new Set(['a']))
+    expect(p.done).toBe(1)
+    expect(p.total).toBe(3)
+    expect(p.complete).toBe(false)
+    expect(p.next?.id).toBe('b') // first unchecked, not 'a'
+  })
+  it('skips already-checked steps when picking next', () => {
+    expect(seriesProgress(steps, new Set(['a', 'b'])).next?.id).toBe('c')
+  })
+  it('is complete with no next when all are checked', () => {
+    const p = seriesProgress(steps, new Set(['a', 'b', 'c']))
+    expect(p.complete).toBe(true)
+    expect(p.next).toBeNull()
+  })
+  it('an empty checklist is not complete', () => {
+    expect(seriesProgress([], new Set()).complete).toBe(false)
   })
 })
 

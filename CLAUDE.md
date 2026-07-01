@@ -2,9 +2,10 @@
 
 ## What this is
 A dead-simple personal habit/quantity tracker. The user adds their own trackers
-("Standard drinks", "Chia seeds", "Went outside", "Weight") that are **yes/no**
-(did it or not), **count** (how many in a day), or **measure** (a free-form
-numeric reading like weight, latest replaces). They tap to log, see a
+("Standard drinks", "Chia seeds", "Went outside", "Weight", "Night routine")
+that are **yes/no** (did it or not), **count** (how many in a day), **measure**
+(a free-form numeric reading like weight, latest replaces), or **series** (an
+ordered checklist of steps that resets daily). They tap to log, see a
 **calendar** of which days, and a few **analytics** (streaks, totals, a 30-day
 chart). Every day is editable after the fact and can carry a free-text note.
 The guiding spirit: a private, honest, low-friction personal tool.
@@ -52,12 +53,13 @@ components/
   Analytics.tsx        # Stat tiles + 30-day bar chart
   ResourcesSection.tsx # Tracker-level links + notes (add/edit/delete) on the detail page
   SectionHeader.tsx    # Dashboard group divider: title + rule, collapse, rename, delete, reorder
+  StepChecklist.tsx    # Series step checkboxes (card inline expand, detail today, DayEditor)
   SignInScreen.tsx     # "Sign in with Google" gate
 lib/
   supabase.ts       # Supabase client (throws if env missing)
-  db.ts             # ALL queries (trackers, entries, notes, resources, sections); listLatestEntries powers "days since" + measure latest; setDayValue for measure
+  db.ts             # ALL queries (trackers, entries, notes, resources, sections, steps); step check = addEntry(...stepId), uncheckStep
   useUser.ts        # useUser() hook + signInWithGoogle()/signOut()
-  types.ts          # Tracker (+section_id), Section, Entry, TrackerType (yesno/count/measure), GoalDirection, DayTotals, TrackerResource
+  types.ts          # Tracker (+section_id), Section, TrackerStep, Entry (+step_id), TrackerType (yesno/count/measure/series), GoalDirection, DayTotals, TrackerResource
   date.ts           # LOCAL day-key helpers + dayLabel/daysInMonth/daysBetween — unit-tested
   date.test.ts
   url.ts            # normalizeUrl (safe http(s) only) + safeHref + hostLabel for resource links — unit-tested
@@ -75,6 +77,7 @@ supabase/
   05-resources.sql  # Migration: tracker_resources table (links + notes)
   06-measure.sql    # Migration: 'measure' type + entries.value int→numeric
   07-sections.sql   # Migration: sections table + trackers.section_id
+  08-series.sql     # Migration: 'series' type + tracker_steps table + entries.step_id
 ```
 
 ## Data model
@@ -85,6 +88,7 @@ supabase/
 | `day_notes` | Optional note, unique per (`tracker_id`, `day`): `user_id`, `note`, `updated_at`. |
 | `tracker_resources` | Reference material attached to a tracker (not a day): `kind` (`link`/`note`), optional `title`, `url` (links), `body` (notes), `sort_order`. A check enforces link⇒url, note⇒body. |
 | `sections` | Dashboard groups: `title`, `sort_order`, `collapsed` (synced). `trackers.section_id` → `sections.id` (`on delete set null` → ungrouped). |
+| `tracker_steps` | Steps of a `series` tracker: `tracker_id`, `label`, `sort_order`. A checked step is an `entries` row with `step_id` set (day total = # steps done). |
 
 - **RLS**: every table is `for all to authenticated using (auth.uid() = user_id)
   with check (auth.uid() = user_id)`. The `user_id` columns **default to
@@ -166,6 +170,17 @@ supabase/
   with `rel="noopener noreferrer"`. The section self-loads via `listResources`,
   which (like the notes readers) **tolerates a missing table** so the page still
   works before migration 05 is applied — but adds/edits fail until it is.
+- **Series trackers** (`type: 'series'`, e.g. a night routine): an ordered
+  checklist of `tracker_steps` that **resets daily**. A checked step is an
+  `entries` row tagged with `step_id` (so a day's total = # steps done, and
+  series reuses count-style calendar/analytics). `lib/stats.ts` `seriesProgress`
+  computes done/total/next/complete. Dashboard card: the big button
+  (`onCheckNext`) checks the next unchecked step in order; **tapping the card
+  expands an inline `StepChecklist`** (out-of-order); **right-click / long-press
+  (~500ms) opens a hold-menu** (reveal checklist / reset today / mark all done /
+  open page). Steps are created in `AddTrackerModal` and managed on the detail
+  page (`StepsManager`); `DayEditor` shows the checklist for a past day. Series
+  forces `goal_direction: 'more'` and `streak_side: 'did'` (no goal/streak UI).
 - **`listNotes`/`listResources` tolerate a missing table** via the shared
   `isMissingTable` helper in `db.ts` (matches `42P01`/`PGRST205`/the table name),
   so the detail page still loads if migration 03 or 05 lags a deploy.
@@ -231,6 +246,9 @@ supabase/
 - **Dashboard sections** — collapsible groups (title + thin rule); assign via a
   per-card picker, reorder within a group, collapse state synced (needs migration
   `07-sections.sql`)
+- **Series tracker type** — a daily-resetting checklist of steps (e.g. a routine)
+  with an advance button, inline checklist, and a hold/right-click menu (needs
+  migration `08-series.sql`)
 - **Edit any past day** via a calendar-tap bottom sheet (adjust value / toggle)
 - **Per-day notes**, with peak/dip **note callouts** on the daily chart; today's
   note is also editable inline from each **dashboard card** (`listNotesForDay`)

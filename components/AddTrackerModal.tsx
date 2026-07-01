@@ -1,18 +1,18 @@
 'use client'
 
 import { useState } from 'react'
-import { X } from 'lucide-react'
-import { createTracker } from '@/lib/db'
+import { X, Plus, GripVertical } from 'lucide-react'
+import { createTracker, createStep } from '@/lib/db'
 import { defaultStreakSide } from '@/lib/stats'
 import { COLORS, EMOJIS } from '@/lib/constants'
-import type { Tracker, TrackerType, GoalDirection, StreakSide } from '@/lib/types'
+import type { Tracker, TrackerType, GoalDirection, StreakSide, TrackerStep } from '@/lib/types'
 
 export default function AddTrackerModal({
   onClose,
   onCreated,
 }: {
   onClose: () => void
-  onCreated: (t: Tracker) => void
+  onCreated: (t: Tracker, steps: TrackerStep[]) => void
 }) {
   const [name, setName] = useState('')
   const [type, setType] = useState<TrackerType>('yesno')
@@ -21,8 +21,11 @@ export default function AddTrackerModal({
   const [emoji, setEmoji] = useState(EMOJIS[0])
   const [color, setColor] = useState(COLORS[0])
   const [unit, setUnit] = useState('')
+  const [steps, setSteps] = useState<string[]>(['', ''])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+
+  const isSeries = type === 'series'
 
   // Picking a goal sets a sensible default streak side (avoid-goals streak on
   // clean days); the user can still flip it below.
@@ -37,6 +40,11 @@ export default function AddTrackerModal({
       setError('Give it a name first.')
       return
     }
+    const stepLabels = steps.map((s) => s.trim()).filter(Boolean)
+    if (isSeries && stepLabels.length === 0) {
+      setError('Add at least one step.')
+      return
+    }
     setSaving(true)
     setError(null)
     try {
@@ -45,12 +53,15 @@ export default function AddTrackerModal({
         type,
         color,
         emoji,
-        unit: type === 'yesno' ? null : unit.trim() || null,
-        goal_direction: goal,
-        // a measure's streak is "days with a reading" — only 'did' makes sense
-        streak_side: type === 'measure' ? 'did' : streakSide,
+        unit: type === 'yesno' || isSeries ? null : unit.trim() || null,
+        // series: more steps done is the win; streak counts days you did it
+        goal_direction: isSeries ? 'more' : goal,
+        streak_side: type === 'measure' || isSeries ? 'did' : streakSide,
       })
-      onCreated(t)
+      const created = isSeries
+        ? await Promise.all(stepLabels.map((label, i) => createStep(t.id, label, i)))
+        : []
+      onCreated(t, created)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save. Check your connection.')
       setSaving(false)
@@ -87,7 +98,7 @@ export default function AddTrackerModal({
 
         {/* Type */}
         <label className="mb-1 block text-sm font-medium text-zinc-600">How do you log it?</label>
-        <div className="mb-4 grid grid-cols-3 gap-2">
+        <div className="mb-4 grid grid-cols-2 gap-2">
           <TypeButton
             active={type === 'yesno'}
             title="Yes / No"
@@ -106,10 +117,58 @@ export default function AddTrackerModal({
             sub="A number, e.g. weight"
             onClick={() => setType('measure')}
           />
+          <TypeButton
+            active={type === 'series'}
+            title="Series"
+            sub="A checklist of steps"
+            onClick={() => setType('series')}
+          />
         </div>
 
+        {/* Steps editor (series only) */}
+        {isSeries && (
+          <div className="mb-4">
+            <label className="mb-1 block text-sm font-medium text-zinc-600">
+              Steps <span className="font-normal text-zinc-400">(in order)</span>
+            </label>
+            <div className="space-y-2">
+              {steps.map((s, i) => (
+                <div key={i} className="flex items-center gap-2">
+                  <GripVertical size={15} className="flex-none text-zinc-300" />
+                  <input
+                    value={s}
+                    onChange={(e) => setSteps((arr) => arr.map((x, j) => (j === i ? e.target.value : x)))}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault()
+                        setSteps((arr) => [...arr, ''])
+                      }
+                    }}
+                    maxLength={120}
+                    placeholder={`Step ${i + 1} (e.g. brush teeth)`}
+                    className="min-w-0 flex-1 rounded-lg border border-zinc-300 px-3 py-1.5 text-sm outline-none focus:border-indigo-500"
+                  />
+                  <button
+                    onClick={() => setSteps((arr) => (arr.length > 1 ? arr.filter((_, j) => j !== i) : arr))}
+                    aria-label={`Remove step ${i + 1}`}
+                    className="flex-none rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-red-600"
+                  >
+                    <X size={15} />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button
+              onClick={() => setSteps((arr) => [...arr, ''])}
+              className="mt-2 flex items-center gap-1 text-xs font-medium text-zinc-500 hover:text-indigo-600"
+            >
+              <Plus size={14} /> Add step
+            </button>
+          </div>
+        )}
+
         {/* Unit (count + measure) */}
-        {type !== 'yesno' && (
+        {(type === 'count' || type === 'measure') && (
           <div className="mb-4">
             <label className="mb-1 block text-sm font-medium text-zinc-600">
               Unit <span className="font-normal text-zinc-400">(optional)</span>
@@ -123,28 +182,32 @@ export default function AddTrackerModal({
           </div>
         )}
 
-        {/* Goal direction */}
-        <label className="mb-1 block text-sm font-medium text-zinc-600">
-          {type === 'measure' ? 'Which direction is your goal?' : 'Is doing this good or bad for you?'}
-        </label>
-        <div className="mb-4 grid grid-cols-3 gap-2">
-          {type === 'measure' ? (
-            <>
-              <GoalButton active={goal === 'less'} title="Lower" sub="down 💚" onClick={() => pickGoal('less')} />
-              <GoalButton active={goal === 'more'} title="Higher" sub="up 💚" onClick={() => pickGoal('more')} />
-              <GoalButton active={goal === 'neutral'} title="Just track" sub="no goal" onClick={() => pickGoal('neutral')} />
-            </>
-          ) : (
-            <>
-              <GoalButton active={goal === 'more'} title="Good" sub="more = 💚" onClick={() => pickGoal('more')} />
-              <GoalButton active={goal === 'less'} title="Bad" sub="less = 💚" onClick={() => pickGoal('less')} />
-              <GoalButton active={goal === 'neutral'} title="Neutral" sub="just count" onClick={() => pickGoal('neutral')} />
-            </>
-          )}
-        </div>
+        {/* Goal direction — not used for series (more steps done is the win) */}
+        {!isSeries && (
+          <>
+            <label className="mb-1 block text-sm font-medium text-zinc-600">
+              {type === 'measure' ? 'Which direction is your goal?' : 'Is doing this good or bad for you?'}
+            </label>
+            <div className="mb-4 grid grid-cols-3 gap-2">
+              {type === 'measure' ? (
+                <>
+                  <GoalButton active={goal === 'less'} title="Lower" sub="down 💚" onClick={() => pickGoal('less')} />
+                  <GoalButton active={goal === 'more'} title="Higher" sub="up 💚" onClick={() => pickGoal('more')} />
+                  <GoalButton active={goal === 'neutral'} title="Just track" sub="no goal" onClick={() => pickGoal('neutral')} />
+                </>
+              ) : (
+                <>
+                  <GoalButton active={goal === 'more'} title="Good" sub="more = 💚" onClick={() => pickGoal('more')} />
+                  <GoalButton active={goal === 'less'} title="Bad" sub="less = 💚" onClick={() => pickGoal('less')} />
+                  <GoalButton active={goal === 'neutral'} title="Neutral" sub="just count" onClick={() => pickGoal('neutral')} />
+                </>
+              )}
+            </div>
+          </>
+        )}
 
-        {/* Streak side — not meaningful for a measure (no "clean"/zero day) */}
-        {type !== 'measure' && (
+        {/* Streak side — not meaningful for measure/series */}
+        {type !== 'measure' && !isSeries && (
           <>
         <label className="mb-1 block text-sm font-medium text-zinc-600">Which streak do you want to celebrate?</label>
         <div className="mb-4 grid grid-cols-2 gap-2">

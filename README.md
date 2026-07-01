@@ -24,6 +24,12 @@ the same stack as MapCrowd.
   line) right on the dashboard. Add a section, pick a tracker's section from its
   card, reorder within a group, and **collapse** sections you don't need open
   (collapse state syncs across devices). Ungrouped trackers show at the top.
+- **Series trackers** — an ordered **checklist** that resets daily (e.g. a night
+  routine: "brush teeth", "floss"…). The big button on the card checks off the
+  **next** step each tap; **tap the card** to expand the full list and check
+  steps off out of order; **right-click / tap-and-hold** for a menu (reveal
+  checklist, reset today, mark all done, open page). Manage the steps on the
+  tracker's detail page.
 - **Detail** (`/t/[id]`) — a bigger "today" logger, a month **calendar** tinted
   by what you logged, and **analytics**: current/longest streak, good days,
   totals, trailing 7/30-day sums, and a bar chart with an **adjustable range**
@@ -83,8 +89,10 @@ own data (per-user RLS).
      [`supabase/06-measure.sql`](supabase/06-measure.sql) (adds the `measure`
      tracker type and makes `entries.value` numeric), and
      [`supabase/07-sections.sql`](supabase/07-sections.sql) (adds the `sections`
-     table and `trackers.section_id`). On a **fresh** DB, `schema.sql` already
-     includes all of these — skip them.
+     table and `trackers.section_id`), and
+     [`supabase/08-series.sql`](supabase/08-series.sql) (adds the `series` type,
+     the `tracker_steps` table, and `entries.step_id`). On a **fresh** DB,
+     `schema.sql` already includes all of these — skip them.
    - Supabase → **Authentication → Providers → Google**: make sure it's enabled.
    - Supabase → **Authentication → URL Configuration → Redirect URLs**: add
      `http://localhost:3000/**` (local dev) and `https://<your-vercel-app>/**`
@@ -124,6 +132,7 @@ components/
   Analytics.tsx        # Stat tiles + adjustable-range bar chart with note callouts
   ResourcesSection.tsx # Tracker-level links + notes
   SectionHeader.tsx    # Dashboard group header (title + rule, collapse, rename, delete)
+  StepChecklist.tsx    # Series step checkboxes (shared by card, detail, day editor)
   SignInScreen.tsx     # Google sign-in gate
 lib/
   supabase.ts       # Supabase client (validates env vars at startup)
@@ -144,6 +153,7 @@ supabase/
   05-resources.sql  # Migration: tracker_resources table (links + notes)
   06-measure.sql    # Migration: 'measure' type + numeric entry values
   07-sections.sql   # Migration: sections table + trackers.section_id
+  08-series.sql     # Migration: 'series' type + tracker_steps + entries.step_id
 ```
 
 ## Data model
@@ -155,6 +165,7 @@ supabase/
 | `day_notes` | Optional free-text note per (`tracker_id`, `day`). |
 | `tracker_resources` | Reference material on a tracker: `kind` (`link`/`note`), optional `title`, `url` (links), `body` (notes). |
 | `sections` | Dashboard groups: `title`, `sort_order`, `collapsed`. `trackers.section_id` points here (null = ungrouped). |
+| `tracker_steps` | Steps of a `series` tracker: `label`, `sort_order`. A checked step is an `entries` row with `step_id` set. |
 
 All tables are RLS-scoped to `auth.uid() = user_id`; the `user_id` columns
 default to `auth.uid()` so inserts fill the owner automatically.

@@ -3,16 +3,21 @@
 import { use, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
-import { ArrowLeft, Trash2, Minus, Plus, Check, StickyNote, Pencil } from 'lucide-react'
+import { ArrowLeft, Trash2, Minus, Plus, Check, StickyNote, Pencil, ChevronUp, ChevronDown, X } from 'lucide-react'
 import {
   getTracker,
   listEntries,
   listNotes,
+  listSteps,
   saveNote,
   addEntry,
   removeLastEntry,
   clearDay,
   setDayValue,
+  uncheckStep,
+  createStep,
+  updateStep,
+  deleteStep,
   deleteTracker,
   updateTracker,
 } from '@/lib/db'
@@ -21,10 +26,11 @@ import { dayTotals, defaultStreakSide } from '@/lib/stats'
 import { useUser } from '@/lib/useUser'
 import { EMOJIS } from '@/lib/constants'
 import { fmtNum, parseMeasure } from '@/lib/format'
-import type { Tracker, Entry, StreakSide } from '@/lib/types'
+import type { Tracker, Entry, StreakSide, TrackerStep } from '@/lib/types'
 import CalendarView from '@/components/CalendarView'
 import Analytics from '@/components/Analytics'
 import DayEditor from '@/components/DayEditor'
+import StepChecklist from '@/components/StepChecklist'
 import ResourcesSection from '@/components/ResourcesSection'
 import SignInScreen from '@/components/SignInScreen'
 
@@ -35,6 +41,7 @@ export default function TrackerDetail({ params }: { params: Promise<{ id: string
 
   const [tracker, setTracker] = useState<Tracker | null>(null)
   const [entries, setEntries] = useState<Entry[]>([])
+  const [steps, setSteps] = useState<TrackerStep[]>([])
   const [notes, setNotes] = useState<Record<string, string>>({})
   const [selectedDay, setSelectedDay] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
@@ -57,11 +64,12 @@ export default function TrackerDetail({ params }: { params: Promise<{ id: string
           setNotFound(true)
           return
         }
-        const [es, ns] = await Promise.all([listEntries(id), listNotes(id)])
+        const [es, ns, sts] = await Promise.all([listEntries(id), listNotes(id), listSteps(id)])
         if (!alive) return
         setTracker(t)
         setEntries(es)
         setNotes(ns)
+        setSteps(sts)
       } catch (e) {
         if (alive) setError(e instanceof Error ? e.message : 'Could not load this tracker.')
       } finally {
@@ -142,6 +150,92 @@ export default function TrackerDetail({ params }: { params: Promise<{ id: string
       setError('Could not save that reading. Try again.')
     } finally {
       setBusy(false)
+    }
+  }
+
+  // Which steps are checked on a given day (for series trackers).
+  function checkedForDay(day: string): Set<string> {
+    const set = new Set<string>()
+    for (const e of entries) if (e.day === day && e.step_id) set.add(e.step_id)
+    return set
+  }
+
+  // Toggle a series step for a day (check → add entry, uncheck → remove it).
+  async function toggleStepOnDay(day: string, stepId: string) {
+    if (!tracker) return
+    const checked = entries.some((e) => e.day === day && e.step_id === stepId)
+    setBusy(true)
+    setError(null)
+    try {
+      if (checked) {
+        await uncheckStep(tracker.id, day, stepId)
+        setEntries((list) => list.filter((e) => !(e.day === day && e.step_id === stepId)))
+      } else {
+        const e = await addEntry(tracker.id, day, 1, stepId)
+        setEntries((list) => [...list, e])
+      }
+    } catch {
+      setError('Could not update that step. Try again.')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // ---- Step management (series) ----
+  async function addStepTo(label: string) {
+    if (!tracker) return
+    const l = label.trim()
+    if (!l) return
+    try {
+      const s = await createStep(tracker.id, l, steps.length)
+      setSteps((list) => [...list, s])
+    } catch {
+      setError('Could not add the step. Try again.')
+    }
+  }
+
+  async function renameStepById(stepId: string, label: string) {
+    const before = steps
+    setSteps((list) => list.map((s) => (s.id === stepId ? { ...s, label } : s)))
+    try {
+      await updateStep(stepId, { label })
+    } catch {
+      setSteps(before)
+      setError('Could not rename the step. Try again.')
+    }
+  }
+
+  // Delete a step; its day-checks (entries with this step_id) cascade away.
+  async function removeStepById(stepId: string) {
+    const beforeSteps = steps
+    const beforeEntries = entries
+    setSteps((list) => list.filter((s) => s.id !== stepId))
+    setEntries((list) => list.filter((e) => e.step_id !== stepId))
+    try {
+      await deleteStep(stepId)
+    } catch {
+      setSteps(beforeSteps)
+      setEntries(beforeEntries)
+      setError('Could not delete the step. Try again.')
+    }
+  }
+
+  async function moveStep(index: number, dir: -1 | 1) {
+    const target = index + dir
+    if (target < 0 || target >= steps.length) return
+    const before = steps
+    const reordered = [...steps]
+    ;[reordered[index], reordered[target]] = [reordered[target], reordered[index]]
+    setSteps(reordered.map((s, i) => ({ ...s, sort_order: i })))
+    try {
+      await Promise.all(
+        reordered
+          .map((s, i) => (s.sort_order === i ? null : updateStep(s.id, { sort_order: i })))
+          .filter((p): p is ReturnType<typeof updateStep> => p !== null),
+      )
+    } catch {
+      setSteps(before)
+      setError('Could not reorder steps. Try again.')
     }
   }
 
@@ -351,6 +445,14 @@ export default function TrackerDetail({ params }: { params: Promise<{ id: string
           >
             <Check size={22} /> {done ? 'Done today' : 'Mark done'}
           </button>
+        ) : tracker.type === 'series' ? (
+          <StepChecklist
+            steps={steps}
+            checkedIds={checkedForDay(today)}
+            busy={busy}
+            color={tracker.color}
+            onToggle={(sid) => toggleStepOnDay(today, sid)}
+          />
         ) : tracker.type === 'measure' ? (
           <MeasureToday
             todayValue={todayTotal > 0 ? todayTotal : null}
@@ -389,6 +491,17 @@ export default function TrackerDetail({ params }: { params: Promise<{ id: string
         )}
         {error && <p className="mt-3 text-center text-sm text-red-600">{error}</p>}
       </div>
+
+      {tracker.type === 'series' && (
+        <StepsManager
+          steps={steps}
+          color={tracker.color}
+          onAdd={addStepTo}
+          onRename={renameStepById}
+          onDelete={removeStepById}
+          onMove={moveStep}
+        />
+      )}
 
       <ResourcesSection trackerId={tracker.id} color={tracker.color} />
 
@@ -442,6 +555,9 @@ export default function TrackerDetail({ params }: { params: Promise<{ id: string
           onAdjust={(delta) => adjust(selectedDay, delta)}
           onSetDone={(d) => setDone(selectedDay, d)}
           onSetValue={(v) => setMeasure(selectedDay, v)}
+          steps={steps}
+          checkedStepIds={checkedForDay(selectedDay)}
+          onToggleStep={(sid) => toggleStepOnDay(selectedDay, sid)}
           onSaveNote={(text) => persistNote(selectedDay, text)}
           onClose={() => setSelectedDay(null)}
         />
@@ -536,5 +652,152 @@ function MeasureToday({
         </button>
       </div>
     </div>
+  )
+}
+
+// Define/edit a series tracker's steps: add, rename (tap), delete, reorder.
+function StepsManager({
+  steps,
+  color,
+  onAdd,
+  onRename,
+  onDelete,
+  onMove,
+}: {
+  steps: TrackerStep[]
+  color: string
+  onAdd: (label: string) => void
+  onRename: (id: string, label: string) => void
+  onDelete: (id: string) => void
+  onMove: (index: number, dir: -1 | 1) => void
+}) {
+  const [newLabel, setNewLabel] = useState('')
+  function add() {
+    if (!newLabel.trim()) return
+    onAdd(newLabel)
+    setNewLabel('')
+  }
+  return (
+    <section className="mb-6">
+      <h2 className="mb-2 text-sm font-semibold text-zinc-500">Steps</h2>
+      <div className="rounded-2xl bg-white p-3 shadow-sm ring-1 ring-black/5">
+        <ul className="space-y-0.5">
+          {steps.map((s, i) => (
+            <StepRow
+              key={s.id}
+              step={s}
+              canUp={i > 0}
+              canDown={i < steps.length - 1}
+              onRename={(l) => onRename(s.id, l)}
+              onDelete={() => onDelete(s.id)}
+              onUp={() => onMove(i, -1)}
+              onDown={() => onMove(i, 1)}
+            />
+          ))}
+          {steps.length === 0 && <li className="px-1 py-1 text-xs text-zinc-400">No steps yet.</li>}
+        </ul>
+        <div className="mt-2 flex items-center gap-2">
+          <input
+            value={newLabel}
+            onChange={(e) => setNewLabel(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && add()}
+            maxLength={120}
+            placeholder="Add a step…"
+            className="min-w-0 flex-1 rounded-lg border border-zinc-300 px-3 py-1.5 text-sm outline-none focus:border-indigo-500"
+          />
+          <button
+            onClick={add}
+            disabled={!newLabel.trim()}
+            className="rounded-lg px-3 py-1.5 text-sm font-medium text-white disabled:opacity-50"
+            style={{ background: color }}
+          >
+            Add
+          </button>
+        </div>
+      </div>
+    </section>
+  )
+}
+
+function StepRow({
+  step,
+  canUp,
+  canDown,
+  onRename,
+  onDelete,
+  onUp,
+  onDown,
+}: {
+  step: TrackerStep
+  canUp: boolean
+  canDown: boolean
+  onRename: (label: string) => void
+  onDelete: () => void
+  onUp: () => void
+  onDown: () => void
+}) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(step.label)
+  function save() {
+    const l = draft.trim()
+    if (l && l !== step.label) onRename(l)
+    else setDraft(step.label)
+    setEditing(false)
+  }
+  return (
+    <li className="flex items-center gap-1.5">
+      <div className="flex flex-none flex-col text-zinc-300">
+        <button
+          onClick={onUp}
+          disabled={!canUp}
+          aria-label="Move step up"
+          className="flex h-[18px] w-5 items-center justify-center rounded hover:bg-zinc-100 hover:text-zinc-600 disabled:pointer-events-none disabled:opacity-0"
+        >
+          <ChevronUp size={13} />
+        </button>
+        <button
+          onClick={onDown}
+          disabled={!canDown}
+          aria-label="Move step down"
+          className="flex h-[18px] w-5 items-center justify-center rounded hover:bg-zinc-100 hover:text-zinc-600 disabled:pointer-events-none disabled:opacity-0"
+        >
+          <ChevronDown size={13} />
+        </button>
+      </div>
+      {editing ? (
+        <input
+          autoFocus
+          value={draft}
+          onChange={(e) => setDraft(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') save()
+            if (e.key === 'Escape') {
+              setDraft(step.label)
+              setEditing(false)
+            }
+          }}
+          onBlur={save}
+          maxLength={120}
+          className="min-w-0 flex-1 rounded border border-zinc-300 px-2 py-1 text-sm outline-none focus:border-indigo-500"
+        />
+      ) : (
+        <button
+          onClick={() => {
+            setDraft(step.label)
+            setEditing(true)
+          }}
+          className="min-w-0 flex-1 truncate py-1 text-left text-sm text-zinc-700 hover:text-zinc-900"
+        >
+          {step.label}
+        </button>
+      )}
+      <button
+        onClick={onDelete}
+        aria-label={`Delete step ${step.label}`}
+        className="flex-none rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-red-600"
+      >
+        <X size={14} />
+      </button>
+    </li>
   )
 }

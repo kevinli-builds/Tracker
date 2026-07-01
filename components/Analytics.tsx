@@ -40,7 +40,8 @@ export default function Analytics({
   since: string
   notes: Record<string, string>
 }) {
-  const isCount = tracker.type === 'count'
+  // Series reuses count-style stats (its day total = number of steps done).
+  const isCount = tracker.type === 'count' || tracker.type === 'series'
   const isMeasure = tracker.type === 'measure'
 
   const side: StreakSide = tracker.streak_side ?? defaultStreakSide(tracker.goal_direction)

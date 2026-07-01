@@ -13,6 +13,7 @@ import type {
   TrackerResource,
   ResourceKind,
   Section,
+  TrackerStep,
 } from './types'
 
 // True when a PostgREST error means "that table doesn't exist yet" — used to
@@ -132,6 +133,62 @@ export async function deleteSection(id: string): Promise<void> {
   if (error) throw error
 }
 
+// ---- Tracker steps (for 'series' trackers) --------------------------------
+
+// All steps for one tracker, in order. Tolerates a missing table (migration 08).
+export async function listSteps(trackerId: string): Promise<TrackerStep[]> {
+  const { data, error } = await supabase
+    .from('tracker_steps')
+    .select('*')
+    .eq('tracker_id', trackerId)
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true })
+  if (error) {
+    if (isMissingTable(error, 'tracker_steps')) return []
+    throw error
+  }
+  return data ?? []
+}
+
+// Every step the user owns (RLS-scoped), for the dashboard to group by tracker.
+export async function listAllSteps(): Promise<TrackerStep[]> {
+  const { data, error } = await supabase
+    .from('tracker_steps')
+    .select('*')
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true })
+  if (error) {
+    if (isMissingTable(error, 'tracker_steps')) return []
+    throw error
+  }
+  return data ?? []
+}
+
+export async function createStep(trackerId: string, label: string, sortOrder: number): Promise<TrackerStep> {
+  const { data, error } = await supabase
+    .from('tracker_steps')
+    .insert({ tracker_id: trackerId, label, sort_order: sortOrder })
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+export async function updateStep(
+  id: string,
+  patch: Partial<Pick<TrackerStep, 'label' | 'sort_order'>>,
+): Promise<TrackerStep> {
+  const { data, error } = await supabase.from('tracker_steps').update(patch).eq('id', id).select().single()
+  if (error) throw error
+  return data
+}
+
+// Delete a step. Its day-checks (entries with this step_id) cascade away.
+export async function deleteStep(id: string): Promise<void> {
+  const { error } = await supabase.from('tracker_steps').delete().eq('id', id)
+  if (error) throw error
+}
+
 // All entries for one tracker, oldest first.
 export async function listEntries(trackerId: string): Promise<Entry[]> {
   const { data, error } = await supabase
@@ -179,15 +236,31 @@ export async function setDayValue(trackerId: string, day: string, value: number)
   return addEntry(trackerId, day, value)
 }
 
-// Record one tap (+value) on a day.
-export async function addEntry(trackerId: string, day: string, value = 1): Promise<Entry> {
+// Record one tap (+value) on a day. `stepId` tags a 'series' step check.
+export async function addEntry(
+  trackerId: string,
+  day: string,
+  value = 1,
+  stepId: string | null = null,
+): Promise<Entry> {
   const { data, error } = await supabase
     .from('entries')
-    .insert({ tracker_id: trackerId, day, value })
+    .insert({ tracker_id: trackerId, day, value, step_id: stepId })
     .select()
     .single()
   if (error) throw error
   return toEntry(data)
+}
+
+// Uncheck a 'series' step for a day (remove its entry).
+export async function uncheckStep(trackerId: string, day: string, stepId: string): Promise<void> {
+  const { error } = await supabase
+    .from('entries')
+    .delete()
+    .eq('tracker_id', trackerId)
+    .eq('day', day)
+    .eq('step_id', stepId)
+  if (error) throw error
 }
 
 // Undo: remove the most recent tap for a tracker on a given day. Returns true

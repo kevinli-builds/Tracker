@@ -1,7 +1,28 @@
 // Pure analytics over a tracker's entries. No I/O — easy to unit-test.
 
-import type { Entry, DayTotals, GoalDirection, StreakSide } from './types'
+import type { Entry, DayTotals, GoalDirection, StreakSide, TrackerStep } from './types'
 import { addDays } from './date'
+
+// ---- Series (checklist) ---------------------------------------------------
+
+export interface SeriesProgress {
+  done: number // steps checked
+  total: number // steps defined
+  complete: boolean // all steps checked (and at least one exists)
+  next: TrackerStep | null // first unchecked step in order (for the advance button)
+}
+
+// Progress for a 'series' tracker given its steps and the set of step ids
+// checked (for a given day).
+export function seriesProgress(steps: TrackerStep[], checked: Set<string>): SeriesProgress {
+  const done = steps.reduce((n, s) => n + (checked.has(s.id) ? 1 : 0), 0)
+  return {
+    done,
+    total: steps.length,
+    complete: steps.length > 0 && done === steps.length,
+    next: steps.find((s) => !checked.has(s.id)) ?? null,
+  }
+}
 
 // Sum each day's logged value into a { 'YYYY-MM-DD': total } map.
 export function dayTotals(entries: Entry[]): DayTotals {

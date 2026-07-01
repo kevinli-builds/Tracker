@@ -2,9 +2,10 @@
 
 import { useState } from 'react'
 import { X, Minus, Plus, Check } from 'lucide-react'
-import type { Tracker } from '@/lib/types'
+import type { Tracker, TrackerStep } from '@/lib/types'
 import { dayLabel } from '@/lib/date'
 import { fmtNum, parseMeasure } from '@/lib/format'
+import StepChecklist from './StepChecklist'
 
 // Bottom-sheet editor for a single day: adjust the value (count), toggle done
 // (yes/no), or set a reading (measure), plus edit a free-text note. Opens for
@@ -18,6 +19,9 @@ export default function DayEditor({
   onAdjust,
   onSetDone,
   onSetValue,
+  steps,
+  checkedStepIds,
+  onToggleStep,
   onSaveNote,
   onClose,
 }: {
@@ -29,6 +33,9 @@ export default function DayEditor({
   onAdjust: (delta: number) => void
   onSetDone: (done: boolean) => void
   onSetValue: (value: number) => void
+  steps: TrackerStep[]
+  checkedStepIds: Set<string>
+  onToggleStep: (stepId: string) => void
   onSaveNote: (text: string) => Promise<void> | void
   onClose: () => void
 }) {
@@ -90,6 +97,16 @@ export default function DayEditor({
           >
             <Check size={22} /> {done ? 'Done' : 'Mark done'}
           </button>
+        ) : tracker.type === 'series' ? (
+          <div className="mb-5">
+            <StepChecklist
+              steps={steps}
+              checkedIds={checkedStepIds}
+              busy={busy}
+              color={tracker.color}
+              onToggle={onToggleStep}
+            />
+          </div>
         ) : tracker.type === 'measure' ? (
           <div className="mb-5">
             <div className="mb-3 text-center">

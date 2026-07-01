@@ -4,7 +4,9 @@
 // 'count'   : tally taps; a day's value is the SUM of its entries
 // 'measure' : a free-form numeric reading per day, e.g. weight (latest replaces;
 //             one entry per day, so the day's value is that single number)
-export type TrackerType = 'yesno' | 'count' | 'measure'
+// 'series'  : an ordered checklist of steps that resets daily (e.g. a routine);
+//             a checked step is an entry tagged with step_id (day total = #done)
+export type TrackerType = 'yesno' | 'count' | 'measure' | 'series'
 
 // Whether logging more of this is "good", "bad", or neither. Drives how
 // analytics frame a day (a green "good day" vs a red one) and the calendar tint.
@@ -23,6 +25,15 @@ export interface Section {
   title: string
   sort_order: number
   collapsed: boolean
+  created_at: string
+}
+
+// One step of a 'series' tracker's checklist.
+export interface TrackerStep {
+  id: string
+  tracker_id: string
+  label: string
+  sort_order: number
   created_at: string
 }
 
@@ -46,6 +57,7 @@ export interface Tracker {
 export interface Entry {
   id: string
   tracker_id: string
+  step_id: string | null // set for a 'series' step check; null otherwise
   day: string // local calendar date, 'YYYY-MM-DD'
   value: number
   logged_at: string

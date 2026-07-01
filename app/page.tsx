@@ -8,8 +8,11 @@ import {
   listNotesForDay,
   listLatestEntries,
   listSections,
+  listAllSteps,
   addEntry,
   removeLastEntry,
+  uncheckStep,
+  clearDay,
   saveNote,
   setDayValue,
   updateTracker,
@@ -20,7 +23,9 @@ import {
 } from '@/lib/db'
 import { todayKey } from '@/lib/date'
 import { useUser, signOut } from '@/lib/useUser'
-import type { Tracker, Section } from '@/lib/types'
+import type { Tracker, Section, TrackerStep } from '@/lib/types'
+
+const NO_STEPS_CHECKED: Set<string> = new Set()
 import TrackerCard from '@/components/TrackerCard'
 import SectionHeader from '@/components/SectionHeader'
 import AddTrackerModal from '@/components/AddTrackerModal'
@@ -33,6 +38,8 @@ export default function Dashboard() {
   const [notes, setNotes] = useState<Record<string, string>>({})
   const [latest, setLatest] = useState<Record<string, LatestEntry>>({})
   const [sections, setSections] = useState<Section[]>([])
+  const [stepsByTracker, setStepsByTracker] = useState<Record<string, TrackerStep[]>>({})
+  const [checkedToday, setCheckedToday] = useState<Record<string, Set<string>>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showAdd, setShowAdd] = useState(false)
@@ -48,21 +55,30 @@ export default function Dashboard() {
     ;(async () => {
       setLoading(true)
       try {
-        const [ts, entries, ns, last, secs] = await Promise.all([
+        const [ts, entries, ns, last, secs, allSteps] = await Promise.all([
           listTrackers(),
           listEntriesForDay(today),
           listNotesForDay(today),
           listLatestEntries(),
           listSections(),
+          listAllSteps(),
         ])
         if (!alive) return
         const map: Record<string, number> = {}
-        for (const e of entries) map[e.tracker_id] = (map[e.tracker_id] ?? 0) + e.value
+        const checked: Record<string, Set<string>> = {}
+        for (const e of entries) {
+          map[e.tracker_id] = (map[e.tracker_id] ?? 0) + e.value
+          if (e.step_id) (checked[e.tracker_id] ??= new Set()).add(e.step_id)
+        }
+        const byTracker: Record<string, TrackerStep[]> = {}
+        for (const st of allSteps) (byTracker[st.tracker_id] ??= []).push(st)
         setTrackers(ts)
         setTotals(map)
         setNotes(ns)
         setLatest(last)
         setSections(secs)
+        setStepsByTracker(byTracker)
+        setCheckedToday(checked)
       } catch (e) {
         if (alive) setError(e instanceof Error ? e.message : 'Could not load your trackers.')
       } finally {
@@ -265,6 +281,97 @@ export default function Dashboard() {
     )
   }
 
+  // ---- Series checklist handlers (optimistic) ----
+  function setChecked(trackerId: string, mutate: (s: Set<string>) => void) {
+    setCheckedToday((m) => {
+      const next = new Set(m[trackerId] ?? [])
+      mutate(next)
+      return { ...m, [trackerId]: next }
+    })
+  }
+
+  async function checkStep(t: Tracker, stepId: string) {
+    if ((checkedToday[t.id] ?? NO_STEPS_CHECKED).has(stepId)) return
+    setBusyId(t.id)
+    setChecked(t.id, (s) => s.add(stepId))
+    setTotals((m) => ({ ...m, [t.id]: (m[t.id] ?? 0) + 1 }))
+    try {
+      await addEntry(t.id, today, 1, stepId)
+    } catch {
+      setChecked(t.id, (s) => s.delete(stepId))
+      setTotals((m) => ({ ...m, [t.id]: Math.max(0, (m[t.id] ?? 0) - 1) }))
+      setError('Could not check that off. Try again.')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  async function uncheckStepFor(t: Tracker, stepId: string) {
+    if (!(checkedToday[t.id] ?? NO_STEPS_CHECKED).has(stepId)) return
+    setBusyId(t.id)
+    setChecked(t.id, (s) => s.delete(stepId))
+    setTotals((m) => ({ ...m, [t.id]: Math.max(0, (m[t.id] ?? 0) - 1) }))
+    try {
+      await uncheckStep(t.id, today, stepId)
+    } catch {
+      setChecked(t.id, (s) => s.add(stepId))
+      setTotals((m) => ({ ...m, [t.id]: (m[t.id] ?? 0) + 1 }))
+      setError('Could not update that step. Try again.')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  function toggleStep(t: Tracker, stepId: string) {
+    return (checkedToday[t.id] ?? NO_STEPS_CHECKED).has(stepId)
+      ? uncheckStepFor(t, stepId)
+      : checkStep(t, stepId)
+  }
+
+  function checkNext(t: Tracker) {
+    const checked = checkedToday[t.id] ?? NO_STEPS_CHECKED
+    const next = (stepsByTracker[t.id] ?? []).find((s) => !checked.has(s.id))
+    if (next) return checkStep(t, next.id)
+  }
+
+  async function resetSteps(t: Tracker) {
+    const before = checkedToday[t.id] ?? NO_STEPS_CHECKED
+    if (before.size === 0) return
+    const prevTotal = totals[t.id] ?? 0
+    setBusyId(t.id)
+    setCheckedToday((m) => ({ ...m, [t.id]: new Set() }))
+    setTotals((m) => ({ ...m, [t.id]: 0 }))
+    try {
+      await clearDay(t.id, today)
+    } catch {
+      setCheckedToday((m) => ({ ...m, [t.id]: new Set(before) }))
+      setTotals((m) => ({ ...m, [t.id]: prevTotal }))
+      setError('Could not reset. Try again.')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  async function checkAll(t: Tracker) {
+    const checked = checkedToday[t.id] ?? NO_STEPS_CHECKED
+    const steps = stepsByTracker[t.id] ?? []
+    const remaining = steps.filter((s) => !checked.has(s.id))
+    if (remaining.length === 0) return
+    const before = new Set(checked)
+    setBusyId(t.id)
+    setChecked(t.id, (s) => remaining.forEach((r) => s.add(r.id)))
+    setTotals((m) => ({ ...m, [t.id]: steps.length }))
+    try {
+      await Promise.all(remaining.map((r) => addEntry(t.id, today, 1, r.id)))
+    } catch {
+      setCheckedToday((m) => ({ ...m, [t.id]: before }))
+      setTotals((m) => ({ ...m, [t.id]: before.size }))
+      setError('Could not complete all steps. Try again.')
+    } finally {
+      setBusyId(null)
+    }
+  }
+
   // One dashboard card; canMove* are relative to the tracker's own group.
   function renderCard(t: Tracker, group: Tracker[], gi: number) {
     return (
@@ -278,6 +385,8 @@ export default function Dashboard() {
         today={today}
         busy={busyId === t.id}
         sections={sections}
+        steps={stepsByTracker[t.id] ?? []}
+        checkedStepIds={checkedToday[t.id] ?? NO_STEPS_CHECKED}
         canMoveUp={gi > 0}
         canMoveDown={gi < group.length - 1}
         onMoveUp={() => moveTracker(t, -1)}
@@ -285,6 +394,10 @@ export default function Dashboard() {
         onLog={(d) => log(t, d)}
         onSetValue={(v) => setValue(t, v)}
         onAssignSection={(sid) => assignSection(t, sid)}
+        onCheckNext={() => checkNext(t)}
+        onToggleStep={(sid) => toggleStep(t, sid)}
+        onResetSteps={() => resetSteps(t)}
+        onCheckAll={() => checkAll(t)}
         onSaveNote={(text) => saveNoteFor(t, text)}
       />
     )
@@ -425,8 +538,9 @@ export default function Dashboard() {
       {showAdd && (
         <AddTrackerModal
           onClose={() => setShowAdd(false)}
-          onCreated={(t) => {
+          onCreated={(t, newSteps) => {
             setTrackers((list) => [...list, t])
+            if (newSteps.length > 0) setStepsByTracker((m) => ({ ...m, [t.id]: newSteps }))
             setShowAdd(false)
           }}
         />
