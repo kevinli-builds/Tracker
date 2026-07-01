@@ -51,7 +51,7 @@ components/
   CalendarView.tsx     # Month grid; days are buttons → onSelectDay; note dots
   DayEditor.tsx        # Bottom-sheet for one day: value editor + note textarea
   Analytics.tsx        # Stat tiles + 30-day bar chart
-  ResourcesSection.tsx # Tracker-level links + notes (add/edit/delete) on the detail page
+  ResourcesSection.tsx # Tracker-level links, notes + file uploads (add/edit/delete) on the detail page
   SectionHeader.tsx    # Dashboard group divider: title + rule, collapse, rename, delete, reorder
   StepChecklist.tsx    # Series step checkboxes (card inline expand, detail today, DayEditor)
   SignInScreen.tsx     # "Sign in with Google" gate
@@ -79,6 +79,7 @@ supabase/
   07-sections.sql   # Migration: sections table + trackers.section_id
   08-series.sql     # Migration: 'series' type + tracker_steps table + entries.step_id
   09-subtitle.sql   # Migration: trackers.subtitle (optional description)
+  10-storage.sql    # Migration: 'file' resource kind + private Storage bucket + RLS
 ```
 
 ## Data model
@@ -87,7 +88,7 @@ supabase/
 | `trackers` | One per tracked thing: `user_id` (owner), name, `type` (`yesno`/`count`), `color`, `emoji`, `unit?`, `goal_direction` (`more`/`less`/`neutral`), `streak_side` (`did`/`skipped` — which side the streak counts), `sort_order`, `archived`, `created_at`. |
 | `entries` | One row per tap: `user_id`, `tracker_id`, `day` (LOCAL date), `value` (**numeric** — measures store decimals). A count day = `SUM(value)`; a yes/no day = "done" if any row exists; a **measure** day = one row holding the reading (latest replaces). |
 | `day_notes` | Optional note, unique per (`tracker_id`, `day`): `user_id`, `note`, `updated_at`. |
-| `tracker_resources` | Reference material attached to a tracker (not a day): `kind` (`link`/`note`), optional `title`, `url` (links), `body` (notes), `sort_order`. A check enforces link⇒url, note⇒body. |
+| `tracker_resources` | Reference material attached to a tracker (not a day): `kind` (`link`/`note`/`file`), optional `title`, `url` (links), `body` (notes), `file_path`/`file_name`/`file_size` (uploads), `sort_order`. A check enforces link⇒url, note⇒body, file⇒file_path. |
 | `sections` | Dashboard groups: `title`, `sort_order`, `collapsed` (synced). `trackers.section_id` → `sections.id` (`on delete set null` → ungrouped). |
 | `tracker_steps` | Steps of a `series` tracker: `tracker_id`, `label`, `sort_order`. A checked step is an `entries` row with `step_id` set (day total = # steps done). |
 
@@ -171,9 +172,14 @@ supabase/
   **Link URLs go through `lib/url.ts` `normalizeUrl`** — bare domains get
   `https://`, and only `http:`/`https:` are allowed (javascript:/data:/file:/…
   are rejected) since the value becomes a `target="_blank"` href. Links render
-  with `rel="noopener noreferrer"`. The section self-loads via `listResources`,
-  which (like the notes readers) **tolerates a missing table** so the page still
-  works before migration 05 is applied — but adds/edits fail until it is.
+  with `rel="noopener noreferrer"`. **File uploads** (migration 10) go to a
+  **private** Storage bucket `resource-files` under `<uid>/<tracker_id>/…` (RLS:
+  own-folder only); `db.ts` `uploadResourceFile`/`signedUrlForFile` (60s signed
+  URLs)/`removeResourceFile`. Client guards mirror the bucket (docs+images, 10MB);
+  deleting a file resource best-effort removes the Storage object then the row.
+  The section self-loads via `listResources`, which (like the notes readers)
+  **tolerates a missing table** so the page still works before migration 05 is
+  applied — but adds/edits fail until it is.
 - **Series trackers** (`type: 'series'`, e.g. a night routine): an ordered
   checklist of `tracker_steps` that **resets daily**. A checked step is an
   `entries` row tagged with `step_id` (so a day's total = # steps done, and

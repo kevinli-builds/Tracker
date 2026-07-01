@@ -108,16 +108,21 @@ create table if not exists tracker_resources (
   id         uuid primary key default gen_random_uuid(),
   user_id    uuid references auth.users(id) on delete cascade default auth.uid(),
   tracker_id uuid not null references trackers(id) on delete cascade,
-  kind       text not null check (kind in ('link', 'note')),
+  kind       text not null check (kind in ('link', 'note', 'file')),
   title      text check (title is null or char_length(title) <= 120),
   url        text check (url is null or char_length(url) <= 2000),
   body       text check (body is null or char_length(body) <= 4000),
+  -- 'file' kind: a private Storage object (see the storage section below)
+  file_path  text,
+  file_name  text,
+  file_size  bigint,
   sort_order int not null default 0,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint tracker_resources_shape check (
     (kind = 'link' and url is not null) or
-    (kind = 'note' and body is not null)
+    (kind = 'note' and body is not null) or
+    (kind = 'file' and file_path is not null)
   )
 );
 create index if not exists tracker_resources_tracker_idx on tracker_resources (tracker_id);
@@ -161,3 +166,38 @@ drop policy if exists tracker_steps_own on tracker_steps;
 create policy tracker_steps_own on tracker_steps
   for all to authenticated
   using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+-- ---------------------------------------------------------------------------
+-- Storage — private bucket for resource file uploads (docs + images, 10 MB).
+-- Path convention: <auth.uid()>/<tracker_id>/<uuid>-<name>; access via signed
+-- URLs. Users may only touch objects under their own <uid>/ folder.
+-- ---------------------------------------------------------------------------
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'resource-files', 'resource-files', false, 10485760,
+  array[
+    'image/png', 'image/jpeg', 'image/gif', 'image/webp',
+    'application/pdf', 'text/plain',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  ]
+)
+on conflict (id) do update set
+  public = excluded.public,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists "resource_files_own_select" on storage.objects;
+create policy "resource_files_own_select" on storage.objects
+  for select to authenticated
+  using (bucket_id = 'resource-files' and (storage.foldername(name))[1] = auth.uid()::text);
+
+drop policy if exists "resource_files_own_insert" on storage.objects;
+create policy "resource_files_own_insert" on storage.objects
+  for insert to authenticated
+  with check (bucket_id = 'resource-files' and (storage.foldername(name))[1] = auth.uid()::text);
+
+drop policy if exists "resource_files_own_delete" on storage.objects;
+create policy "resource_files_own_delete" on storage.objects
+  for delete to authenticated
+  using (bucket_id = 'resource-files' and (storage.foldername(name))[1] = auth.uid()::text);

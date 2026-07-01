@@ -1,10 +1,29 @@
 'use client'
 
-import { useEffect, useState } from 'react'
-import { Link2, StickyNote, Trash2, ExternalLink, Pencil, X } from 'lucide-react'
-import { listResources, addResource, updateResource, deleteResource } from '@/lib/db'
+import { useEffect, useRef, useState } from 'react'
+import { Link2, StickyNote, Trash2, ExternalLink, Pencil, X, Upload, FileText } from 'lucide-react'
+import {
+  listResources,
+  addResource,
+  updateResource,
+  deleteResource,
+  uploadResourceFile,
+  signedUrlForFile,
+  removeResourceFile,
+} from '@/lib/db'
 import { normalizeUrl, hostLabel, safeHref } from '@/lib/url'
 import type { TrackerResource, ResourceKind } from '@/lib/types'
+
+// Client-side guards mirroring the bucket config (docs + images, 10 MB).
+const MAX_FILE_BYTES = 10 * 1024 * 1024
+const ALLOWED_EXT = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'pdf', 'txt', 'doc', 'docx']
+const FILE_ACCEPT = '.png,.jpg,.jpeg,.gif,.webp,.pdf,.txt,.doc,.docx,image/*,application/pdf'
+
+function fmtBytes(n: number): string {
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${Math.round(n / 1024)} KB`
+  return `${(n / 1024 / 1024).toFixed(1)} MB`
+}
 
 // Reference material attached to a tracker: titled links and free-text notes
 // (distinct from per-day notes). Self-loads on mount; add / edit / delete in
@@ -16,6 +35,8 @@ export default function ResourcesSection({ trackerId, color }: { trackerId: stri
   const [adding, setAdding] = useState<ResourceKind | null>(null)
   const [editing, setEditing] = useState<string | null>(null)
   const [confirmDelete, setConfirmDelete] = useState<string | null>(null)
+  const [uploading, setUploading] = useState(false)
+  const fileInput = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     let alive = true
@@ -46,11 +67,40 @@ export default function ResourcesSection({ trackerId, color }: { trackerId: stri
     setEditing(null)
   }
 
+  // Validate + upload a file, then record it as a 'file' resource.
+  async function uploadFile(file: File) {
+    setError(null)
+    const ext = file.name.split('.').pop()?.toLowerCase() ?? ''
+    if (!ALLOWED_EXT.includes(ext)) {
+      setError('That file type isn’t allowed — docs & images only.')
+      return
+    }
+    if (file.size > MAX_FILE_BYTES) {
+      setError('That file is too big (max 10 MB).')
+      return
+    }
+    setUploading(true)
+    try {
+      const meta = await uploadResourceFile(trackerId, file)
+      const created = await addResource({ tracker_id: trackerId, kind: 'file', title: file.name, ...meta })
+      setResources((list) => [...list, created])
+    } catch {
+      setError('Could not upload that file. Try again.')
+    } finally {
+      setUploading(false)
+    }
+  }
+
   async function remove(id: string) {
+    const target = resources.find((r) => r.id === id)
     const prev = resources
     setResources((list) => list.filter((r) => r.id !== id)) // optimistic
     setConfirmDelete(null)
     try {
+      // Best-effort: drop the Storage object first, then the row.
+      if (target?.kind === 'file' && target.file_path) {
+        await removeResourceFile(target.file_path).catch(() => {})
+      }
       await deleteResource(id)
     } catch {
       setResources(prev)
@@ -82,9 +132,28 @@ export default function ResourcesSection({ trackerId, color }: { trackerId: stri
             >
               <StickyNote size={13} /> Note
             </button>
+            <button
+              onClick={() => fileInput.current?.click()}
+              disabled={uploading}
+              className="flex items-center gap-1 rounded-full border border-zinc-200 px-2.5 py-1 text-xs font-medium text-zinc-500 hover:bg-zinc-50 disabled:opacity-50"
+            >
+              <Upload size={13} /> {uploading ? 'Uploading…' : 'File'}
+            </button>
           </div>
         )}
       </div>
+
+      <input
+        ref={fileInput}
+        type="file"
+        accept={FILE_ACCEPT}
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0]
+          if (f) uploadFile(f)
+          e.target.value = '' // allow re-selecting the same file
+        }}
+      />
 
       <div className="space-y-2">
         {adding && (
@@ -124,7 +193,7 @@ export default function ResourcesSection({ trackerId, color }: { trackerId: stri
 
         {!loading && resources.length === 0 && !adding && (
           <p className="rounded-xl border border-dashed border-zinc-200 px-3 py-3 text-center text-xs text-zinc-400">
-            Attach a link (like a routine doc) or a note to keep with this tracker.
+            Attach a link (like a routine doc), a note, or a file to keep with this tracker.
           </p>
         )}
         {error && <p className="text-sm text-red-600">{error}</p>}
@@ -150,10 +219,26 @@ function ResourceRow({
   onCancelDelete: () => void
   onConfirmDelete: () => void
 }) {
+  const [opening, setOpening] = useState(false)
+
+  // Files are private; fetch a short-lived signed URL on click, then open it.
+  async function openFile() {
+    if (!r.file_path) return
+    setOpening(true)
+    try {
+      const url = await signedUrlForFile(r.file_path)
+      window.open(url, '_blank', 'noopener,noreferrer')
+    } catch {
+      /* transient — user can retry */
+    } finally {
+      setOpening(false)
+    }
+  }
+
   return (
     <div className="flex items-start gap-2 rounded-xl bg-white p-3 shadow-sm ring-1 ring-black/5">
       <span className="mt-0.5 flex-none text-zinc-400">
-        {r.kind === 'link' ? <Link2 size={15} /> : <StickyNote size={15} />}
+        {r.kind === 'link' ? <Link2 size={15} /> : r.kind === 'file' ? <FileText size={15} /> : <StickyNote size={15} />}
       </span>
 
       <div className="min-w-0 flex-1">
@@ -167,6 +252,15 @@ function ResourceRow({
             <span className="truncate">{r.title?.trim() || hostLabel(r.url)}</span>
             <ExternalLink size={12} className="flex-none opacity-60" />
           </a>
+        ) : r.kind === 'file' ? (
+          <button
+            onClick={openFile}
+            disabled={opening}
+            className="group flex max-w-full items-center gap-1 text-sm font-medium text-indigo-600 hover:underline disabled:opacity-60"
+          >
+            <span className="truncate">{r.title?.trim() || r.file_name}</span>
+            <ExternalLink size={12} className="flex-none opacity-60" />
+          </button>
         ) : (
           <>
             {r.title?.trim() && <div className="truncate text-sm font-medium">{r.title}</div>}
@@ -175,6 +269,12 @@ function ResourceRow({
         )}
         {r.kind === 'link' && r.title?.trim() && r.url && (
           <div className="truncate text-xs text-zinc-400">{hostLabel(r.url)}</div>
+        )}
+        {r.kind === 'file' && (
+          <div className="text-xs text-zinc-400">
+            {r.file_size != null ? fmtBytes(r.file_size) : 'file'}
+            {opening ? ' · opening…' : ''}
+          </div>
         )}
       </div>
 
@@ -189,9 +289,11 @@ function ResourceRow({
         </div>
       ) : (
         <div className="flex flex-none items-center gap-0.5">
-          <button onClick={onEdit} aria-label="Edit" className="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700">
-            <Pencil size={14} />
-          </button>
+          {r.kind !== 'file' && (
+            <button onClick={onEdit} aria-label="Edit" className="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700">
+              <Pencil size={14} />
+            </button>
+          )}
           <button onClick={onAskDelete} aria-label="Delete" className="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-red-600">
             <Trash2 size={14} />
           </button>

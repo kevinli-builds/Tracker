@@ -38,9 +38,10 @@ the same stack as MapCrowd.
   and dips (`▼`) that have a note get a **callout** you can hover/tap. Tap the
   **icon** in the header to swap a tracker's emoji any time.
 - **Resources** — attach reference material to the tracker itself: titled
-  **links** (e.g. a link to your stretch-routine doc) and free-text **notes**.
-  These live on the detail page and are separate from per-day notes. Links open
-  in a new tab and are validated to safe `http(s)` URLs.
+  **links** (e.g. a link to your stretch-routine doc), free-text **notes**, and
+  **file uploads** (docs & images, ≤10 MB). These live on the detail page and are
+  separate from per-day notes. Links open in a new tab (validated to safe
+  `http(s)`); files go to a **private** store and open via a temporary link.
 - **Edit any day** — tap any day on the calendar to open a sheet that adjusts
   that day's value (or toggles yes/no) and edits a free-text **note** for the
   day. Days with a note show a dot. Backfilling earlier days extends analytics
@@ -96,8 +97,10 @@ own data (per-user RLS).
      [`supabase/08-series.sql`](supabase/08-series.sql) (adds the `series` type,
      the `tracker_steps` table, and `entries.step_id`), and
      [`supabase/09-subtitle.sql`](supabase/09-subtitle.sql) (adds an optional
-     `trackers.subtitle`). On a **fresh** DB, `schema.sql` already includes all
-     of these — skip them.
+     `trackers.subtitle`), and
+     [`supabase/10-storage.sql`](supabase/10-storage.sql) (adds the `file`
+     resource kind + a private Storage bucket for uploads). On a **fresh** DB,
+     `schema.sql` already includes all of these — skip them.
    - Supabase → **Authentication → Providers → Google**: make sure it's enabled.
    - Supabase → **Authentication → URL Configuration → Redirect URLs**: add
      `http://localhost:3000/**` (local dev) and `https://<your-vercel-app>/**`
@@ -160,6 +163,7 @@ supabase/
   07-sections.sql   # Migration: sections table + trackers.section_id
   08-series.sql     # Migration: 'series' type + tracker_steps + entries.step_id
   09-subtitle.sql   # Migration: optional trackers.subtitle
+  10-storage.sql    # Migration: 'file' resource kind + private Storage bucket
 ```
 
 ## Data model

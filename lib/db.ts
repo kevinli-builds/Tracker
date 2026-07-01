@@ -354,12 +354,52 @@ export interface NewResource {
   title?: string | null
   url?: string | null
   body?: string | null
+  file_path?: string | null
+  file_name?: string | null
+  file_size?: number | null
 }
 
 export async function addResource(input: NewResource): Promise<TrackerResource> {
   const { data, error } = await supabase.from('tracker_resources').insert(input).select().single()
   if (error) throw error
   return data
+}
+
+// ---- Resource file uploads (private Storage bucket) -----------------------
+
+const FILE_BUCKET = 'resource-files'
+
+// Upload a file to the user's own folder and return its metadata for a 'file'
+// resource. Path: <uid>/<tracker_id>/<uuid>-<safe name> (matches storage RLS).
+export async function uploadResourceFile(
+  trackerId: string,
+  file: File,
+): Promise<{ file_path: string; file_name: string; file_size: number }> {
+  const {
+    data: { session },
+  } = await supabase.auth.getSession()
+  const uid = session?.user?.id
+  if (!uid) throw new Error('Not signed in')
+  const safe = file.name.replace(/[^\w.\-]+/g, '_').slice(0, 100) || 'file'
+  const path = `${uid}/${trackerId}/${crypto.randomUUID()}-${safe}`
+  const { error } = await supabase.storage
+    .from(FILE_BUCKET)
+    .upload(path, file, { contentType: file.type || undefined, upsert: false })
+  if (error) throw error
+  return { file_path: path, file_name: file.name, file_size: file.size }
+}
+
+// Short-lived signed URL to open/download a private resource file.
+export async function signedUrlForFile(path: string): Promise<string> {
+  const { data, error } = await supabase.storage.from(FILE_BUCKET).createSignedUrl(path, 60)
+  if (error) throw error
+  return data.signedUrl
+}
+
+// Remove a resource file's Storage object (call before deleting its row).
+export async function removeResourceFile(path: string): Promise<void> {
+  const { error } = await supabase.storage.from(FILE_BUCKET).remove([path])
+  if (error) throw error
 }
 
 export async function updateResource(

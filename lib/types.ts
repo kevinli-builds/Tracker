@@ -68,9 +68,10 @@ export interface Entry {
 export type DayTotals = Record<string, number>
 
 // Reference material attached to a tracker itself (not a specific day): a titled
-// link (e.g. a doc URL) or a free-text note. 'link' rows carry a `url`, 'note'
-// rows carry a `body`; `title` is an optional label for either.
-export type ResourceKind = 'link' | 'note'
+// link (a doc URL), a free-text note, or an uploaded file (private Storage
+// object). 'link' → `url`, 'note' → `body`, 'file' → `file_path`/`file_name`/
+// `file_size`; `title` is an optional label for any of them.
+export type ResourceKind = 'link' | 'note' | 'file'
 
 export interface TrackerResource {
   id: string
@@ -79,6 +80,9 @@ export interface TrackerResource {
   title: string | null
   url: string | null
   body: string | null
+  file_path: string | null
+  file_name: string | null
+  file_size: number | null
   sort_order: number
   created_at: string
   updated_at: string
