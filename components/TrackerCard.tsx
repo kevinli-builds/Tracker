@@ -133,6 +133,9 @@ export default function TrackerCard({
       </span>
       <span className="min-w-0 flex-1">
         <span className="block truncate font-medium">{tracker.name}</span>
+        {tracker.subtitle && (
+          <span className="block truncate text-xs text-zinc-400">{tracker.subtitle}</span>
+        )}
         <span className="flex items-center gap-1.5 text-xs text-zinc-500">
           <span className="truncate">{statusText}</span>
           {sinceDays != null && sinceDays >= 1 && (

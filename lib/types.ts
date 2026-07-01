@@ -41,6 +41,7 @@ export interface Tracker {
   id: string
   section_id: string | null
   name: string
+  subtitle: string | null // optional one-line description shown under the name
   type: TrackerType
   color: string
   emoji: string

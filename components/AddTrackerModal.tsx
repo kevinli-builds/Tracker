@@ -15,6 +15,7 @@ export default function AddTrackerModal({
   onCreated: (t: Tracker, steps: TrackerStep[]) => void
 }) {
   const [name, setName] = useState('')
+  const [subtitle, setSubtitle] = useState('')
   const [type, setType] = useState<TrackerType>('yesno')
   const [goal, setGoal] = useState<GoalDirection>('more')
   const [streakSide, setStreakSide] = useState<StreakSide>('did')
@@ -50,6 +51,7 @@ export default function AddTrackerModal({
     try {
       const t = await createTracker({
         name: trimmed,
+        subtitle: subtitle.trim() || null,
         type,
         color,
         emoji,
@@ -93,7 +95,15 @@ export default function AddTrackerModal({
           onChange={(e) => setName(e.target.value)}
           onKeyDown={(e) => e.key === 'Enter' && !saving && submit()}
           placeholder="e.g. Standard drinks, Chia seeds…"
-          className="mb-4 w-full rounded-lg border border-zinc-300 px-3 py-2 outline-none focus:border-indigo-500"
+          className="mb-3 w-full rounded-lg border border-zinc-300 px-3 py-2 outline-none focus:border-indigo-500"
+        />
+        <input
+          value={subtitle}
+          onChange={(e) => setSubtitle(e.target.value)}
+          onKeyDown={(e) => e.key === 'Enter' && !saving && submit()}
+          maxLength={200}
+          placeholder="Subtitle (optional, e.g. a short description)"
+          className="mb-4 w-full rounded-lg border border-zinc-300 px-3 py-2 text-sm outline-none focus:border-indigo-500"
         />
 
         {/* Type */}

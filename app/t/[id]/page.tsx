@@ -49,6 +49,7 @@ export default function TrackerDetail({ params }: { params: Promise<{ id: string
   const [busy, setBusy] = useState(false)
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [editingEmoji, setEditingEmoji] = useState(false)
+  const [editingSubtitle, setEditingSubtitle] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const today = todayKey()
@@ -256,6 +257,23 @@ export default function TrackerDetail({ params }: { params: Promise<{ id: string
     }
   }
 
+  // Save the tracker's subtitle/description; persist optimistically.
+  async function changeSubtitle(next: string) {
+    if (!tracker) return
+    const value = next.trim() || null
+    setEditingSubtitle(false)
+    if ((tracker.subtitle ?? null) === value) return
+    const prev = tracker
+    setTracker({ ...tracker, subtitle: value })
+    setError(null)
+    try {
+      await updateTracker(tracker.id, { subtitle: value })
+    } catch {
+      setTracker(prev)
+      setError('Could not update the description. Try again.')
+    }
+  }
+
   // Change the tracker's icon; persist optimistically.
   async function changeEmoji(next: string) {
     if (!tracker) return
@@ -401,8 +419,37 @@ export default function TrackerDetail({ params }: { params: Promise<{ id: string
             </>
           )}
         </div>
-        <div>
+        <div className="min-w-0 flex-1">
           <h1 className="text-xl font-bold leading-tight">{tracker.name}</h1>
+          {editingSubtitle ? (
+            <input
+              autoFocus
+              defaultValue={tracker.subtitle ?? ''}
+              maxLength={200}
+              onBlur={(e) => changeSubtitle(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') changeSubtitle((e.target as HTMLInputElement).value)
+                if (e.key === 'Escape') setEditingSubtitle(false)
+              }}
+              placeholder="Short description"
+              className="mt-0.5 w-full rounded border border-zinc-300 px-1.5 py-0.5 text-sm outline-none focus:border-indigo-500"
+            />
+          ) : tracker.subtitle ? (
+            <button
+              onClick={() => setEditingSubtitle(true)}
+              className="mt-0.5 block max-w-full truncate text-left text-sm text-zinc-500 hover:text-zinc-800"
+              title="Edit description"
+            >
+              {tracker.subtitle}
+            </button>
+          ) : (
+            <button
+              onClick={() => setEditingSubtitle(true)}
+              className="mt-0.5 block text-left text-xs text-zinc-400 hover:text-indigo-600"
+            >
+              + Add a description
+            </button>
+          )}
           <p className="text-sm text-zinc-500">
             {tracker.type === 'yesno'
               ? 'Yes / no habit'

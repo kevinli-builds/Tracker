@@ -27,6 +27,8 @@ create table if not exists trackers (
   user_id        uuid references auth.users(id) on delete cascade default auth.uid(),
   section_id     uuid references sections(id) on delete set null,
   name           text not null check (char_length(name) between 1 and 80),
+  -- optional one-line description shown under the name
+  subtitle       text check (subtitle is null or char_length(subtitle) <= 200),
   -- 'yesno'  : a day is either done or not (at most one entry per day)
   -- 'count'  : tally taps within a day (a day's value is SUM of its entries)
   -- 'measure': a free-form numeric reading per day, e.g. weight (latest replaces;

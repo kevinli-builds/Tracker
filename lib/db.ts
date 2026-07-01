@@ -50,6 +50,7 @@ export async function getTracker(id: string): Promise<Tracker | null> {
 
 export interface NewTracker {
   name: string
+  subtitle?: string | null
   type: TrackerType
   color: string
   emoji: string
@@ -61,7 +62,7 @@ export interface NewTracker {
 export async function createTracker(input: NewTracker): Promise<Tracker> {
   const { data, error } = await supabase
     .from('trackers')
-    .insert({ ...input, unit: input.unit || null })
+    .insert({ ...input, unit: input.unit || null, subtitle: input.subtitle || null })
     .select()
     .single()
   if (error) throw error
@@ -73,7 +74,10 @@ export async function createTracker(input: NewTracker): Promise<Tracker> {
 export async function updateTracker(
   id: string,
   patch: Partial<
-    Pick<Tracker, 'streak_side' | 'goal_direction' | 'name' | 'color' | 'emoji' | 'unit' | 'sort_order' | 'section_id'>
+    Pick<
+      Tracker,
+      'streak_side' | 'goal_direction' | 'name' | 'subtitle' | 'color' | 'emoji' | 'unit' | 'sort_order' | 'section_id'
+    >
   >,
 ): Promise<Tracker> {
   const { data, error } = await supabase

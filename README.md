@@ -45,6 +45,9 @@ the same stack as MapCrowd.
   that day's value (or toggles yes/no) and edits a free-text **note** for the
   day. Days with a note show a dot. Backfilling earlier days extends analytics
   back to the earliest logged day, so honest backfilling still counts.
+- **Subtitle** — give any tracker an optional one-line description that shows
+  under its name (handy inside a group, e.g. a note on each stretch in a stretch
+  routine). Set it when creating a tracker, or click it on the tracker's page.
 - **Goal direction** — when you create a tracker you say whether doing it is
   *good* (more = 💚, e.g. chia seeds), *bad* (less = 💚, e.g. drinks — a clean
   day is the win), or *neutral*. This only changes how streaks/"good days" and
@@ -91,8 +94,10 @@ own data (per-user RLS).
      [`supabase/07-sections.sql`](supabase/07-sections.sql) (adds the `sections`
      table and `trackers.section_id`), and
      [`supabase/08-series.sql`](supabase/08-series.sql) (adds the `series` type,
-     the `tracker_steps` table, and `entries.step_id`). On a **fresh** DB,
-     `schema.sql` already includes all of these — skip them.
+     the `tracker_steps` table, and `entries.step_id`), and
+     [`supabase/09-subtitle.sql`](supabase/09-subtitle.sql) (adds an optional
+     `trackers.subtitle`). On a **fresh** DB, `schema.sql` already includes all
+     of these — skip them.
    - Supabase → **Authentication → Providers → Google**: make sure it's enabled.
    - Supabase → **Authentication → URL Configuration → Redirect URLs**: add
      `http://localhost:3000/**` (local dev) and `https://<your-vercel-app>/**`
@@ -154,6 +159,7 @@ supabase/
   06-measure.sql    # Migration: 'measure' type + numeric entry values
   07-sections.sql   # Migration: sections table + trackers.section_id
   08-series.sql     # Migration: 'series' type + tracker_steps + entries.step_id
+  09-subtitle.sql   # Migration: optional trackers.subtitle
 ```
 
 ## Data model

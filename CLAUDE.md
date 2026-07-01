@@ -78,6 +78,7 @@ supabase/
   06-measure.sql    # Migration: 'measure' type + entries.value int→numeric
   07-sections.sql   # Migration: sections table + trackers.section_id
   08-series.sql     # Migration: 'series' type + tracker_steps table + entries.step_id
+  09-subtitle.sql   # Migration: trackers.subtitle (optional description)
 ```
 
 ## Data model
@@ -125,8 +126,11 @@ supabase/
   week/month bucket has no single note day). Callouts mark interior strict local
   max (`▲`) / min (`▼`) bars that have a `day_notes` note, shown on hover (desktop)
   or tap (mobile).
+- **Subtitle** (`trackers.subtitle`, migration 09): an optional one-line
+  description shown under the name on the dashboard card and the detail header
+  (click-to-edit there via `updateTracker`). Set at creation in `AddTrackerModal`.
 - **Editing tracker settings** all go through `db.ts` `updateTracker(id, patch)`
-  (patches `name`/`color`/`emoji`/`unit`/`goal_direction`/`streak_side`). The
+  (patches `name`/`subtitle`/`color`/`emoji`/`unit`/`goal_direction`/`streak_side`). The
   detail header's icon tile is a button → inline emoji picker (same `EMOJIS`
   palette as the create modal) that calls `changeEmoji`, persisting optimistically
   with rollback on error — the same pattern as the streak-side toggle. `name`,
