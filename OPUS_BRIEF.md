@@ -180,3 +180,46 @@ A brief intro shown once after first sign-in, before the empty dashboard.
 - Set the localStorage flag on ANY dismissal path. Reopen affordance: a small
   "?" button next to the sign-out control on the dashboard header.
 - Keep copy in the app's plain, non-preachy voice; no gamification promises.
+
+---
+
+## 6. Wave 2 — after the cold open (written 2026-07-04)
+
+_State at writing: PWA shell, /week review, numeric goals, and the intro
+sheet are LIVE (migration 11-goals.sql must be applied in Supabase).
+Verify state before building._
+
+### W1 — Close the reminder loop (the P1 that still has no send path)
+The service worker exists; reminders still need delivery. Per section 1
+option A: `push_subscriptions` table (RLS own-rows), a "Remind me" toggle +
+time per tracker (migration 12-reminders.sql), and a Vercel cron route with
+`web-push` that sends "anything unlogged today?" — mirror PersonalAssist
+`lib/push.ts` + `api/cron/notify`. Needs the Supabase service key in a
+Vercel-only env var (server route — the FIRST server-side code in this repo;
+keep it to the one route). iOS = install-to-home-screen caveat, reuse the
+explainer copy.
+
+### W2 — Delights, in value order
+D1 Year-in-Pixels poster (identity artifact; pure canvas + tested
+`yearGrid()` in stats.ts) → D2 future-self milestone notes → D4 anti-guilt
+welcome-back card → D3 on-this-day → D5 correlation hints (min-sample
+guarded, weekly review only).
+
+### W3 — Data respect features
+- CSV export (formula-injection-guarded, per section 1).
+- **CSV import** — the onboarding wedge for people leaving other habit apps:
+  map columns to (tracker, day, value), preview, bulk insert. "Honest
+  backfilling counts" is already the house rule; imports extend it.
+
+### W4 — Quick-log box (friction ~zero, tentative)
+A single text input on the dashboard: "2 drinks yesterday", "weight 78.4",
+"went outside". Rule-based parser (number + tracker-name fuzzy match +
+day word) — NO LLM, keep it offline-fast and predictable; unmatched input
+just focuses the matching card. Pure, testable `lib/quicklog.ts`.
+
+### Tentative / parked
+- Per-tracker read-only share link (opt-in, revocable). Runs against the
+  private ethos — only build on explicit user pull.
+- Apple Health import: no web API; a HealthKit-export-XML upload parser is
+  possible but heavy. Park.
+- Streak share image: fold into D1 poster work if built.
