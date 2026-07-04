@@ -14,6 +14,8 @@ import {
   chooseGranularity,
   buildBuckets,
   resolveRange,
+  periodProgress,
+  weekReview,
 } from './stats'
 import type { TrackerStep } from './types'
 
@@ -223,5 +225,49 @@ describe('buildBuckets', () => {
   })
   it('returns no buckets for an inverted range', () => {
     expect(buildBuckets(totals, '2026-06-03', '2026-06-01').buckets).toEqual([])
+  })
+})
+
+describe('periodProgress', () => {
+  it('more: fills toward the target, met at/above it', () => {
+    expect(periodProgress(3, 3, 'more')).toEqual({ ratio: 1, met: true })
+    expect(periodProgress(4, 3, 'more')).toEqual({ ratio: 4 / 3, met: true })
+    expect(periodProgress(1, 3, 'more')).toEqual({ ratio: 1 / 3, met: false })
+  })
+  it('less: target is a cap, met at/under it, over it means exceeded', () => {
+    expect(periodProgress(0, 2, 'less')).toEqual({ ratio: 0, met: true })
+    expect(periodProgress(2, 2, 'less')).toEqual({ ratio: 1, met: true })
+    expect(periodProgress(3, 2, 'less')).toEqual({ ratio: 1.5, met: false })
+  })
+  it('guards a zero/absent target (no divide-by-zero)', () => {
+    expect(periodProgress(5, 0, 'more').ratio).toBe(0)
+  })
+})
+
+describe('weekReview', () => {
+  // Mon 2026-06-29 … Sun 2026-07-05 is "this week"; the prior week is 06-22…06-28.
+  const totals = {
+    '2026-06-23': 2, // last week
+    '2026-06-25': 1, // last week
+    '2026-06-29': 3, // this week (best day)
+    '2026-07-01': 1, // this week
+    '2026-07-02': 2, // this week — today
+  }
+  const r = weekReview(totals, 'did', '2026-06-29', '2026-07-05', '2026-06-22', '2026-06-28', '2026-07-02', '2026-06-01')
+
+  it('totals this week and last week and their delta', () => {
+    expect(r.thisWeek).toBe(6)
+    expect(r.lastWeek).toBe(3)
+    expect(r.delta).toBe(3)
+  })
+  it('counts active days and picks the best day this week', () => {
+    expect(r.activeDays).toBe(3)
+    expect(r.bestDay).toEqual({ day: '2026-06-29', value: 3 })
+  })
+  it('computes the current streak ending today (07-01 and 07-02 logged)', () => {
+    expect(r.currentStreak).toBe(2)
+  })
+  it('bestDay is null for a silent week', () => {
+    expect(weekReview({}, 'did', '2026-06-29', '2026-07-05', '2026-06-22', '2026-06-28', '2026-07-02', '2026-06-01').bestDay).toBeNull()
   })
 })

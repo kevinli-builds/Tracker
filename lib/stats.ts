@@ -146,6 +146,75 @@ export function summarize(
   }
 }
 
+// ---- Numeric goals --------------------------------------------------------
+
+export interface Progress {
+  ratio: number // actual / target, unclamped (>1 means past the target)
+  met: boolean // goal satisfied so far this period
+}
+
+// Progress toward a numeric goal target given the period's actual total. For a
+// 'more' goal (e.g. "≥ 3 runs/week") the bar fills toward the target and is met
+// at/above it; for 'less' (e.g. "≤ 2 drinks/week") the target is a cap — the bar
+// fills toward it and is met while at/under it. 'neutral' has no target, so
+// callers only invoke this for 'more'/'less' trackers.
+export function periodProgress(actual: number, target: number, direction: GoalDirection): Progress {
+  return {
+    ratio: target > 0 ? actual / target : 0,
+    met: direction === 'less' ? actual <= target : actual >= target,
+  }
+}
+
+// ---- Weekly review --------------------------------------------------------
+
+export interface WeekReview {
+  thisWeek: number // total logged this week
+  lastWeek: number // total logged the prior week (for comparison)
+  delta: number // thisWeek − lastWeek
+  activeDays: number // days this week with any log
+  bestDay: { day: string; value: number } | null // highest-total day this week
+  currentStreak: number // streak-side streak ending today
+}
+
+// Per-tracker weekly summary: this week vs last, active days, the best day, and
+// the current streak. Pure over a day-total map (streaks need full history, so
+// pass totals built from all entries, not just the two weeks). `thisEnd` is
+// normally today; days beyond it are just absent (zero) and don't skew anything.
+export function weekReview(
+  totals: DayTotals,
+  side: StreakSide,
+  thisStart: string,
+  thisEnd: string,
+  lastStart: string,
+  lastEnd: string,
+  today: string,
+  since: string,
+): WeekReview {
+  const sum = (start: string, end: string) =>
+    dayRange(start, end).reduce((acc, d) => acc + (totals[d] ?? 0), 0)
+
+  let bestDay: { day: string; value: number } | null = null
+  let activeDays = 0
+  for (const d of dayRange(thisStart, thisEnd)) {
+    const v = totals[d] ?? 0
+    if (v > 0) {
+      activeDays++
+      if (!bestDay || v > bestDay.value) bestDay = { day: d, value: v }
+    }
+  }
+
+  const thisWeek = sum(thisStart, thisEnd)
+  const lastWeek = sum(lastStart, lastEnd)
+  return {
+    thisWeek,
+    lastWeek,
+    delta: thisWeek - lastWeek,
+    activeDays,
+    bestDay,
+    currentStreak: currentStreak(totals, side, today, since),
+  }
+}
+
 // ---- Measure stats --------------------------------------------------------
 
 export interface MeasureStats {

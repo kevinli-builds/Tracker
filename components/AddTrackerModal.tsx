@@ -5,7 +5,7 @@ import { X, Plus, GripVertical } from 'lucide-react'
 import { createTracker, createStep, updateTracker } from '@/lib/db'
 import { defaultStreakSide } from '@/lib/stats'
 import { COLORS, EMOJIS } from '@/lib/constants'
-import type { Tracker, TrackerType, GoalDirection, StreakSide, TrackerStep } from '@/lib/types'
+import type { Tracker, TrackerType, GoalDirection, GoalPeriod, StreakSide, TrackerStep } from '@/lib/types'
 
 // Create or (when `initial` is set) edit a tracker. Editing keeps existing
 // entries even if the type changes — the "cut-over" is non-destructive.
@@ -29,11 +29,20 @@ export default function AddTrackerModal({
   const [emoji, setEmoji] = useState(initial?.emoji ?? EMOJIS[0])
   const [color, setColor] = useState(initial?.color ?? COLORS[0])
   const [unit, setUnit] = useState(initial?.unit ?? '')
+  const [goalTarget, setGoalTarget] = useState(initial?.goal_target != null ? String(initial.goal_target) : '')
+  const [goalPeriod, setGoalPeriod] = useState<GoalPeriod>(initial?.goal_period ?? 'week')
   const [steps, setSteps] = useState<string[]>(['', ''])
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const isSeries = type === 'series'
+
+  // A numeric target only makes sense for count / yes-no trackers with a
+  // direction (measure is latest-replace; series/neutral have no target). Fields
+  // stay hidden until a direction is picked — progressive disclosure.
+  const supportsGoal = (type === 'count' || type === 'yesno') && (goal === 'more' || goal === 'less')
+  const parsedTarget = Number(goalTarget)
+  const hasTarget = supportsGoal && goalTarget.trim() !== '' && Number.isFinite(parsedTarget) && parsedTarget > 0
 
   // Picking a goal sets a sensible default streak side (avoid-goals streak on
   // clean days); the user can still flip it below.
@@ -66,6 +75,8 @@ export default function AddTrackerModal({
       // series: more steps done is the win; streak counts days you did it
       goal_direction: isSeries ? ('more' as GoalDirection) : goal,
       streak_side: type === 'measure' || isSeries ? ('did' as StreakSide) : streakSide,
+      goal_target: hasTarget ? parsedTarget : null,
+      goal_period: hasTarget ? goalPeriod : null,
     }
     try {
       if (isEdit) {
@@ -235,6 +246,51 @@ export default function AddTrackerModal({
               )}
             </div>
           </>
+        )}
+
+        {/* Numeric target (progressive: only once a direction is chosen) */}
+        {supportsGoal && (
+          <div className="mb-4 rounded-lg bg-zinc-50 p-3">
+            <label className="mb-1.5 block text-sm font-medium text-zinc-600">
+              Set a target? <span className="font-normal text-zinc-400">(optional)</span>
+            </label>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm text-zinc-500">{goal === 'less' ? 'At most' : 'At least'}</span>
+              <input
+                type="number"
+                inputMode="decimal"
+                step="any"
+                min="0"
+                value={goalTarget}
+                onChange={(e) => setGoalTarget(e.target.value)}
+                onKeyDown={(e) => e.key === 'Enter' && !saving && submit()}
+                placeholder="e.g. 3"
+                className="w-20 rounded-lg border border-zinc-300 px-2 py-1.5 text-right text-sm tabular-nums outline-none focus:border-indigo-500"
+              />
+              {unit.trim() && <span className="text-sm text-zinc-500">{unit.trim()}</span>}
+              <span className="text-sm text-zinc-500">per</span>
+              <div className="flex overflow-hidden rounded-lg border border-zinc-300">
+                {(['day', 'week'] as GoalPeriod[]).map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    onClick={() => setGoalPeriod(p)}
+                    className={`px-3 py-1.5 text-sm ${
+                      goalPeriod === p ? 'bg-indigo-600 text-white' : 'bg-white text-zinc-600 hover:bg-zinc-50'
+                    }`}
+                  >
+                    {p}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <p className="mt-1.5 text-[11px] text-zinc-400">
+              {goal === 'less'
+                ? 'Stay at or under this to hit the goal.'
+                : 'Reach this to hit the goal.'}{' '}
+              A progress bar shows on the card.
+            </p>
+          </div>
         )}
 
         {/* Streak side — not meaningful for measure/series */}

@@ -34,6 +34,13 @@ export function daysBetween(a: string, b: string): number {
   return Math.round(ms / 86_400_000)
 }
 
+// The Monday of the week containing `key` (weeks run Monday→Sunday, matching
+// the "Your week" summary). Returns a day key.
+export function startOfWeek(key: string): string {
+  const dow = fromDayKey(key).getDay() // 0 Sun .. 6 Sat
+  return addDays(key, -((dow + 6) % 7)) // days back to Monday
+}
+
 const MONTHS = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',

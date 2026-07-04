@@ -14,6 +14,7 @@ import type {
   ResourceKind,
   Section,
   TrackerStep,
+  GoalPeriod,
 } from './types'
 
 // True when a PostgREST error means "that table doesn't exist yet" — used to
@@ -28,6 +29,12 @@ function toEntry(row: Entry): Entry {
   return { ...row, value: Number(row.value) }
 }
 
+// trackers.goal_target is also numeric, so it can come back as a string too;
+// coerce it (keeping null) so goal math and the progress bars get real numbers.
+function toTracker(row: Tracker): Tracker {
+  return { ...row, goal_target: row.goal_target == null ? null : Number(row.goal_target) }
+}
+
 export async function listTrackers(): Promise<Tracker[]> {
   const { data, error } = await supabase
     .from('trackers')
@@ -36,7 +43,7 @@ export async function listTrackers(): Promise<Tracker[]> {
     .order('sort_order', { ascending: true })
     .order('created_at', { ascending: true })
   if (error) throw error
-  return data ?? []
+  return (data ?? []).map(toTracker)
 }
 
 export async function getTracker(id: string): Promise<Tracker | null> {
@@ -45,7 +52,7 @@ export async function getTracker(id: string): Promise<Tracker | null> {
     if (error.code === 'PGRST116') return null // no rows
     throw error
   }
-  return data
+  return toTracker(data)
 }
 
 export interface NewTracker {
@@ -57,16 +64,24 @@ export interface NewTracker {
   unit?: string | null
   goal_direction: GoalDirection
   streak_side: StreakSide
+  goal_target?: number | null
+  goal_period?: GoalPeriod | null
 }
 
 export async function createTracker(input: NewTracker): Promise<Tracker> {
   const { data, error } = await supabase
     .from('trackers')
-    .insert({ ...input, unit: input.unit || null, subtitle: input.subtitle || null })
+    .insert({
+      ...input,
+      unit: input.unit || null,
+      subtitle: input.subtitle || null,
+      goal_target: input.goal_target ?? null,
+      goal_period: input.goal_period ?? null,
+    })
     .select()
     .single()
   if (error) throw error
-  return data
+  return toTracker(data)
 }
 
 // Patch editable settings on a tracker (e.g. which side the streak counts, or
@@ -84,6 +99,8 @@ export async function updateTracker(
       | 'color'
       | 'emoji'
       | 'unit'
+      | 'goal_target'
+      | 'goal_period'
       | 'sort_order'
       | 'section_id'
     >
@@ -96,7 +113,7 @@ export async function updateTracker(
     .select()
     .single()
   if (error) throw error
-  return data
+  return toTracker(data)
 }
 
 export async function deleteTracker(id: string): Promise<void> {
@@ -220,6 +237,31 @@ export async function listEntriesForDay(day: string): Promise<Entry[]> {
   return (data ?? []).map(toEntry)
 }
 
+// Entries for ALL trackers within an inclusive [start, end] day window. Powers
+// the dashboard's week-to-date goal progress. An inverted range (start > end,
+// e.g. a Monday where the week hasn't started) simply matches nothing.
+export async function listEntriesInRange(start: string, end: string): Promise<Entry[]> {
+  const { data, error } = await supabase
+    .from('entries')
+    .select('*')
+    .gte('day', start)
+    .lte('day', end)
+  if (error) throw error
+  return (data ?? []).map(toEntry)
+}
+
+// Every entry the user owns (RLS-scoped), oldest first. Powers the weekly-review
+// page, which needs full history to compute streaks (not just the two weeks it
+// summarizes). Fine at personal scale.
+export async function listAllEntries(): Promise<Entry[]> {
+  const { data, error } = await supabase
+    .from('entries')
+    .select('*')
+    .order('day', { ascending: true })
+  if (error) throw error
+  return (data ?? []).map(toEntry)
+}
+
 // Most recent entry per tracker → { trackerId: { day, value } }. Powers the
 // dashboard's "days since last logged" hint and a measure card's latest reading.
 // RLS scopes this to the user; we pull (tracker_id, day, value) ordered newest
@@ -337,6 +379,28 @@ export async function listNotesForDay(day: string): Promise<Record<string, strin
   const map: Record<string, string> = {}
   for (const row of data ?? []) map[row.tracker_id] = row.note
   return map
+}
+
+// Notes across ALL trackers within an inclusive [start, end] window, newest
+// first — powers the weekly review's "notes this week" list. Tolerates a
+// missing day_notes table like the other note readers.
+export interface DayNoteRow {
+  tracker_id: string
+  day: string
+  note: string
+}
+export async function listNotesInRange(start: string, end: string): Promise<DayNoteRow[]> {
+  const { data, error } = await supabase
+    .from('day_notes')
+    .select('tracker_id, day, note')
+    .gte('day', start)
+    .lte('day', end)
+    .order('day', { ascending: false })
+  if (error) {
+    if (isMissingTable(error, 'day_notes')) return []
+    throw error
+  }
+  return data ?? []
 }
 
 // ---- Tracker resources (links + notes attached to the tracker) ------------

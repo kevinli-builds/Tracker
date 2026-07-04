@@ -10,7 +10,7 @@ import {
 import type { Tracker, TrackerStep } from '@/lib/types'
 import { daysBetween } from '@/lib/date'
 import { fmtNum, parseMeasure } from '@/lib/format'
-import { seriesProgress } from '@/lib/stats'
+import { seriesProgress, periodProgress } from '@/lib/stats'
 import StepChecklist from './StepChecklist'
 
 // One row on the dashboard. `todayTotal` is the tracker's logged value for
@@ -24,6 +24,7 @@ export default function TrackerCard({
   note,
   lastDay,
   latestValue,
+  periodTotal,
   today,
   busy,
   sections,
@@ -47,6 +48,7 @@ export default function TrackerCard({
   note: string
   lastDay: string | null
   latestValue: number | null
+  periodTotal: number | null // total over the goal's current period, or null if no goal
   today: string
   busy: boolean
   sections: { id: string; title: string }[]
@@ -70,6 +72,18 @@ export default function TrackerCard({
   const unit = tracker.unit?.trim()
   const isSeries = tracker.type === 'series'
   const progress = seriesProgress(steps, checkedStepIds)
+
+  // Numeric-goal progress bar (count/yes-no with a target). `periodTotal` is the
+  // total the parent computed over the goal's current period (today, or the
+  // week-to-date). Colour: emerald when met, red when over a 'less' cap, else
+  // the tracker's own colour while still building toward a 'more' target.
+  const goalTarget = tracker.goal_target
+  const goal =
+    periodTotal != null && goalTarget != null && goalTarget > 0
+      ? periodProgress(periodTotal, goalTarget, tracker.goal_direction)
+      : null
+  const goalOver = goal ? tracker.goal_direction === 'less' && !goal.met : false
+  const goalColor = goalOver ? '#ef4444' : goal?.met ? '#10b981' : tracker.color
 
   // Whole days since this tracker was last logged. Null when it was logged today
   // (todayTotal covers that) or never logged at all.
@@ -279,6 +293,29 @@ export default function TrackerCard({
           </div>
         )}
       </div>
+
+      {/* Numeric-goal progress bar for the current period */}
+      {goal && (
+        <div className="-mt-1 px-3 pb-2">
+          <div className="mb-0.5 flex items-center justify-between text-[11px]">
+            <span className="text-zinc-400 tabular-nums">
+              {fmtNum(periodTotal!)} / {fmtNum(goalTarget!)}
+              {unit ? ' ' + unit : ''} {tracker.goal_period === 'week' ? 'this week' : 'today'}
+            </span>
+            {goal.met ? (
+              <span className="font-medium text-emerald-600">✓ goal</span>
+            ) : goalOver ? (
+              <span className="font-medium text-red-500">over</span>
+            ) : null}
+          </div>
+          <div className="h-1.5 w-full overflow-hidden rounded-full bg-zinc-100">
+            <div
+              className="h-full rounded-full transition-all"
+              style={{ width: `${Math.min(100, goal.ratio * 100)}%`, background: goalColor }}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Series: inline checklist (expand on tap / via the hold-menu) */}
       {isSeries && expanded && (

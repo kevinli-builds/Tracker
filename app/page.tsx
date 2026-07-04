@@ -1,10 +1,12 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Plus, LogOut } from 'lucide-react'
+import Link from 'next/link'
+import { Plus, LogOut, CalendarCheck, ChevronRight } from 'lucide-react'
 import {
   listTrackers,
   listEntriesForDay,
+  listEntriesInRange,
   listNotesForDay,
   listLatestEntries,
   listSections,
@@ -21,7 +23,7 @@ import {
   deleteSection,
   type LatestEntry,
 } from '@/lib/db'
-import { todayKey } from '@/lib/date'
+import { todayKey, addDays, startOfWeek, fromDayKey } from '@/lib/date'
 import { reorderByIndex } from '@/lib/reorder'
 import { useUser, signOut } from '@/lib/useUser'
 import type { Tracker, Section, TrackerStep } from '@/lib/types'
@@ -38,6 +40,9 @@ export default function Dashboard() {
   const [totals, setTotals] = useState<Record<string, number>>({})
   const [notes, setNotes] = useState<Record<string, string>>({})
   const [latest, setLatest] = useState<Record<string, LatestEntry>>({})
+  // Per-tracker total for the days earlier this week (Mon → yesterday). Added to
+  // today's optimistic total to get the week-to-date figure a weekly goal needs.
+  const [weekPrior, setWeekPrior] = useState<Record<string, number>>({})
   const [sections, setSections] = useState<Section[]>([])
   const [stepsByTracker, setStepsByTracker] = useState<Record<string, TrackerStep[]>>({})
   const [checkedToday, setCheckedToday] = useState<Record<string, Set<string>>>({})
@@ -49,6 +54,9 @@ export default function Dashboard() {
   const [newSectionTitle, setNewSectionTitle] = useState('')
 
   const today = todayKey()
+  // Surface the weekly review around the weekend it summarizes: Fri → Mon.
+  const dow = fromDayKey(today).getDay() // 0 Sun .. 6 Sat
+  const weekReady = dow === 5 || dow === 6 || dow === 0 || dow === 1
 
   useEffect(() => {
     if (!user) return // wait for auth — RLS scopes the queries to this user
@@ -56,9 +64,12 @@ export default function Dashboard() {
     ;(async () => {
       setLoading(true)
       try {
-        const [ts, entries, ns, last, secs, allSteps] = await Promise.all([
+        // Days earlier this week (excludes today; empty range on a Monday).
+        const weekStart = startOfWeek(today)
+        const [ts, entries, priorEntries, ns, last, secs, allSteps] = await Promise.all([
           listTrackers(),
           listEntriesForDay(today),
+          listEntriesInRange(weekStart, addDays(today, -1)),
           listNotesForDay(today),
           listLatestEntries(),
           listSections(),
@@ -71,10 +82,13 @@ export default function Dashboard() {
           map[e.tracker_id] = (map[e.tracker_id] ?? 0) + e.value
           if (e.step_id) (checked[e.tracker_id] ??= new Set()).add(e.step_id)
         }
+        const prior: Record<string, number> = {}
+        for (const e of priorEntries) prior[e.tracker_id] = (prior[e.tracker_id] ?? 0) + e.value
         const byTracker: Record<string, TrackerStep[]> = {}
         for (const st of allSteps) (byTracker[st.tracker_id] ??= []).push(st)
         setTrackers(ts)
         setTotals(map)
+        setWeekPrior(prior)
         setNotes(ns)
         setLatest(last)
         setSections(secs)
@@ -368,6 +382,16 @@ export default function Dashboard() {
     }
   }
 
+  // The total over a tracker's current goal period, or null if it has no goal.
+  // Weekly goals add today's (optimistic) total to the rest-of-week base so a tap
+  // moves the bar; daily goals just use today.
+  function periodTotalFor(t: Tracker): number | null {
+    if (t.goal_target == null || t.goal_period == null) return null
+    if (t.type !== 'count' && t.type !== 'yesno') return null // targets only sum for these
+    const todayTotal = totals[t.id] ?? 0
+    return t.goal_period === 'week' ? (weekPrior[t.id] ?? 0) + todayTotal : todayTotal
+  }
+
   // One dashboard card; canMove* are relative to the tracker's own group.
   function renderCard(t: Tracker, group: Tracker[], gi: number) {
     return (
@@ -378,6 +402,7 @@ export default function Dashboard() {
         note={notes[t.id] ?? ''}
         lastDay={latest[t.id]?.day ?? null}
         latestValue={latest[t.id]?.value ?? null}
+        periodTotal={periodTotalFor(t)}
         today={today}
         busy={busyId === t.id}
         sections={sections}
@@ -414,6 +439,25 @@ export default function Dashboard() {
           <LogOut size={14} /> Sign out
         </button>
       </header>
+
+      {/* Weekend nudge to the weekly review */}
+      {weekReady && !loading && trackers.length > 0 && (
+        <Link
+          href="/week"
+          className="mb-4 flex items-center gap-3 rounded-xl bg-indigo-50 p-3 ring-1 ring-indigo-100 hover:bg-indigo-100/70"
+        >
+          <span className="flex h-10 w-10 flex-none items-center justify-center rounded-lg bg-indigo-600 text-white">
+            <CalendarCheck size={20} />
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-semibold text-indigo-900">Your week is ready</span>
+            <span className="block truncate text-xs text-indigo-700/70">
+              See totals, streaks, and this week’s notes.
+            </span>
+          </span>
+          <ChevronRight size={18} className="flex-none text-indigo-400" />
+        </Link>
+      )}
 
       {loading ? (
         <div className="space-y-2">

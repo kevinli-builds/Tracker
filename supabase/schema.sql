@@ -45,6 +45,10 @@ create table if not exists trackers (
   goal_direction text not null default 'neutral' check (goal_direction in ('more', 'less', 'neutral')),
   -- which side the streak counts: 'did' = days logged, 'skipped' = clean days
   streak_side    text not null default 'did' check (streak_side in ('did', 'skipped')),
+  -- optional numeric goal for the current period, e.g. "≥ 3 runs/week" ('more')
+  -- or "≤ 2 drinks/week" ('less'); null = no target. Only used for count/yes-no.
+  goal_target    numeric check (goal_target is null or goal_target > 0),
+  goal_period    text check (goal_period is null or goal_period in ('day', 'week')),
   sort_order     int not null default 0,
   archived       boolean not null default false,
   created_at     timestamptz not null default now()

@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Tracker">
+  <!-- Full-bleed background so the icon works as a maskable PWA icon. -->
+  <rect width="512" height="512" fill="#6366f1" />
+  <!-- Check mark kept inside the ~80% maskable safe zone. -->
+  <path d="M168 262 L232 326 L352 190"
+        fill="none" stroke="#ffffff" stroke-width="42"
+        stroke-linecap="round" stroke-linejoin="round" />
+</svg>

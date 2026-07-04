@@ -18,6 +18,9 @@ export type GoalDirection = 'more' | 'less' | 'neutral'
 // neutral counter, or a "did" streak on something you usually avoid.
 export type StreakSide = 'did' | 'skipped'
 
+// The window a numeric goal target applies over: a single day or a week.
+export type GoalPeriod = 'day' | 'week'
+
 // A collapsible group on the dashboard. Trackers reference it via section_id
 // (null = ungrouped). collapsed is persisted so it syncs across devices.
 export interface Section {
@@ -48,6 +51,8 @@ export interface Tracker {
   unit: string | null // e.g. "drinks", "glasses" — only meaningful for count
   goal_direction: GoalDirection
   streak_side: StreakSide
+  goal_target: number | null // optional numeric target for the current period
+  goal_period: GoalPeriod | null // 'day' | 'week' — the window goal_target spans
   sort_order: number
   archived: boolean
   created_at: string

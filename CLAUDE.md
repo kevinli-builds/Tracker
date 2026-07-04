@@ -80,12 +80,17 @@ supabase/
   08-series.sql     # Migration: 'series' type + tracker_steps table + entries.step_id
   09-subtitle.sql   # Migration: trackers.subtitle (optional description)
   10-storage.sql    # Migration: 'file' resource kind + private Storage bucket + RLS
+  11-goals.sql      # Migration: trackers.goal_target + goal_period (numeric goals)
+public/
+  manifest.json     # PWA manifest (installable, standalone)
+  icon.svg          # App/maskable icon
+  sw.js             # App-shell service worker (offline shell; data network-first)
 ```
 
 ## Data model
 | Table | Purpose |
 |---|---|
-| `trackers` | One per tracked thing: `user_id` (owner), name, `type` (`yesno`/`count`), `color`, `emoji`, `unit?`, `goal_direction` (`more`/`less`/`neutral`), `streak_side` (`did`/`skipped` — which side the streak counts), `sort_order`, `archived`, `created_at`. |
+| `trackers` | One per tracked thing: `user_id` (owner), name, `type` (`yesno`/`count`), `color`, `emoji`, `unit?`, `goal_direction` (`more`/`less`/`neutral`), `streak_side` (`did`/`skipped` — which side the streak counts), `goal_target?`/`goal_period?` (`day`/`week` — optional numeric goal for count/yes-no), `sort_order`, `archived`, `created_at`. |
 | `entries` | One row per tap: `user_id`, `tracker_id`, `day` (LOCAL date), `value` (**numeric** — measures store decimals). A count day = `SUM(value)`; a yes/no day = "done" if any row exists; a **measure** day = one row holding the reading (latest replaces). |
 | `day_notes` | Optional note, unique per (`tracker_id`, `day`): `user_id`, `note`, `updated_at`. |
 | `tracker_resources` | Reference material attached to a tracker (not a day): `kind` (`link`/`note`/`file`), optional `title`, `url` (links), `body` (notes), `file_path`/`file_name`/`file_size` (uploads), `sort_order`. A check enforces link⇒url, note⇒body, file⇒file_path. |
@@ -212,6 +217,31 @@ supabase/
   (a wrong directive locks users out). Security model overall: client-only SPA,
   **RLS is the boundary** (every table `auth.uid() = user_id`), the anon key is
   public by design, and all user text (incl. notes) renders as escaped JSX.
+- **Numeric goals** (`trackers.goal_target`/`goal_period`, migration 11): an
+  optional target for the current period — `≥ N` (goal_direction `more`) or `≤ N`
+  (`less`), per `day` or `week`. Only surfaced for **count / yes-no** (measure is
+  latest-replace; series/neutral have no target); the `AddTrackerModal` fields
+  appear only once a direction is chosen (progressive disclosure) and both columns
+  null ⇒ no goal. `lib/stats.ts` `periodProgress(actual, target, direction)` (pure)
+  returns `{ ratio, met }`; the dashboard `TrackerCard` shows a thin bar. The
+  dashboard computes the period total as today's (optimistic) total for `day`
+  goals, or **week-to-date** for `week` goals — `weekPrior` (Mon→yesterday, via
+  `listEntriesInRange`) plus today, so a tap moves the bar. `goal_target` is
+  `numeric`, so `db.ts` `toTracker` coerces it to a JS number (like `toEntry`).
+- **Weekly review** (`app/week/page.tsx`): a "Your week" summary — per tracker,
+  this week vs last, active days, best day, current streak; plus any notes written
+  this week. Pure computation via `lib/stats.ts` `weekReview(...)` over full
+  history (`listAllEntries`, so streaks aren't truncated); weeks are **Monday→
+  Sunday** (`lib/date.ts` `startOfWeek`). Notes come from `listNotesInRange`
+  (tolerates a missing `day_notes` table). The dashboard shows a "Your week is
+  ready" card linking here **Fri→Mon** (`fromDayKey(today).getDay()`).
+- **PWA** (`public/manifest.json` + `icon.svg` + `sw.js`): installable, standalone.
+  The service worker caches the app shell (`/`, `/week`, manifest, icon) + hashed
+  `/_next/static` assets and is **network-first for navigations**; it only touches
+  **same-origin GETs**, so Supabase/Google requests pass straight through (never
+  served stale). Registered by `components/ServiceWorkerRegister.tsx`, **production
+  only** (a SW breaks Turbopack HMR in `next dev`). Note: `icon.svg` covers Android/
+  desktop install + maskable; a PNG `apple-touch-icon` can be added for iOS polish.
 - **Mobile-first.** Tap targets are kept ≥44px; modals are bottom sheets
   (`items-end ... sm:items-center`, `rounded-t-2xl`) that dismiss on backdrop tap;
   the floating Add button uses `env(safe-area-inset-bottom)` (needs
@@ -266,6 +296,13 @@ supabase/
   migration `08-series.sql`)
 - **File uploads on resources** — attach docs/images (private Storage, signed
   URLs) alongside links/notes (needs migration `10-storage.sql`)
+- **Numeric goals** — an optional `≥`/`≤` target per day or week on count/yes-no
+  trackers, with a progress bar on the dashboard card (needs migration
+  `11-goals.sql`)
+- **Weekly review** (`/week`) — a "Your week" summary (this vs last week, active
+  days, best day, streak, this week's notes); a dashboard card links to it Fri→Mon
+- **Installable PWA** — manifest + icon + app-shell service worker (offline shell,
+  data stays network-first)
 - **Edit a tracker** — an Edit button reopens the create form to change any
   setting; type changes keep existing entries
 - **Edit any past day** via a calendar-tap bottom sheet (adjust value / toggle)

@@ -1,9 +1,17 @@
 import type { Metadata, Viewport } from "next";
 import "./globals.css";
+import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 
 export const metadata: Metadata = {
   title: "Tracker",
   description: "Tap to log anything — drinks, habits, anything — and see your calendar and stats.",
+  manifest: "/manifest.json",
+  applicationName: "Tracker",
+  appleWebApp: { capable: true, title: "Tracker", statusBarStyle: "default" },
+  icons: {
+    icon: "/icon.svg",
+    apple: "/icon.svg",
+  },
 };
 
 // viewportFit: 'cover' is required for env(safe-area-inset-*) to resolve on
@@ -22,7 +30,10 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" className="antialiased">
-      <body>{children}</body>
+      <body>
+        {children}
+        <ServiceWorkerRegister />
+      </body>
     </html>
   );
 }
