@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Plus, LogOut, CalendarCheck, ChevronRight } from 'lucide-react'
+import { Plus, LogOut, CalendarCheck, ChevronRight, HelpCircle } from 'lucide-react'
 import {
   listTrackers,
   listEntriesForDay,
@@ -33,6 +33,7 @@ import TrackerCard from '@/components/TrackerCard'
 import SectionHeader from '@/components/SectionHeader'
 import AddTrackerModal from '@/components/AddTrackerModal'
 import SignInScreen from '@/components/SignInScreen'
+import IntroSheet from '@/components/IntroSheet'
 
 export default function Dashboard() {
   const { user, loading: authLoading } = useUser()
@@ -49,6 +50,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [showAdd, setShowAdd] = useState(false)
+  const [showIntro, setShowIntro] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [addingSection, setAddingSection] = useState(false)
   const [newSectionTitle, setNewSectionTitle] = useState('')
@@ -104,6 +106,23 @@ export default function Dashboard() {
       alive = false
     }
   }, [today, user])
+
+  // First visit with nothing tracked yet → one-time intro (reopenable via ?).
+  useEffect(() => {
+    if (loading || !user || trackers.length > 0) return
+    try {
+      if (!localStorage.getItem('tracker.introSeen')) setShowIntro(true)
+    } catch {
+      // storage unavailable — skip the intro rather than show it forever
+    }
+  }, [loading, user, trackers.length])
+
+  function closeIntro() {
+    setShowIntro(false)
+    try {
+      localStorage.setItem('tracker.introSeen', '1')
+    } catch {}
+  }
 
   // Auth gate: wait for the session, then show sign-in if logged out.
   if (authLoading) {
@@ -431,13 +450,23 @@ export default function Dashboard() {
           <h1 className="text-2xl font-bold tracking-tight">Tracker</h1>
           <p className="text-sm text-zinc-500">Tap to log. See your calendar and stats.</p>
         </div>
-        <button
-          onClick={signOut}
-          title={`Signed in as ${user.email ?? ''} — sign out`}
-          className="flex items-center gap-1.5 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-500 hover:bg-zinc-50"
-        >
-          <LogOut size={14} /> Sign out
-        </button>
+        <div className="flex items-center gap-1.5">
+          <button
+            onClick={() => setShowIntro(true)}
+            title="How Tracker works"
+            aria-label="How Tracker works"
+            className="flex h-7 w-7 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-400 hover:bg-zinc-50 hover:text-indigo-600"
+          >
+            <HelpCircle size={14} />
+          </button>
+          <button
+            onClick={signOut}
+            title={`Signed in as ${user.email ?? ''} — sign out`}
+            className="flex items-center gap-1.5 rounded-full border border-zinc-200 bg-white px-3 py-1.5 text-xs text-zinc-500 hover:bg-zinc-50"
+          >
+            <LogOut size={14} /> Sign out
+          </button>
+        </div>
       </header>
 
       {/* Weekend nudge to the weekly review */}
@@ -574,6 +603,16 @@ export default function Dashboard() {
       >
         <Plus size={20} /> Add tracker
       </button>
+
+      {showIntro && (
+        <IntroSheet
+          onAdd={() => {
+            closeIntro()
+            setShowAdd(true)
+          }}
+          onClose={closeIntro}
+        />
+      )}
 
       {showAdd && (
         <AddTrackerModal
