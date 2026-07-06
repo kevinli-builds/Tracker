@@ -241,3 +241,61 @@ single column). Three things to eyeball on a phone next session-with-login:
 Also: the PWA manifest shipped — verify install + icon on iOS, and that the
 service worker does not cache-poison after deploys (network-first for data
 was the spec).
+
+---
+
+## 9. Depth roadmap — serving the current user (2026-07-05)
+
+_Direction change: analytics depth for the person already logging daily.
+House rules unchanged: pure, tested `lib/stats.ts` functions first; honest
+statistics (minimum-sample guards, observation-not-causation phrasing);
+never guilt. Ship as an "Insights" section on the detail page + one global
+Insights page._
+
+### I1 — Correlation matrix + lag effects (M) ⭐ (deepens §4 D5)
+All tracker pairs, same-day AND lag-1 ("X today → Y tomorrow"), phi/point-
+biserial as appropriate, shown ONLY when ≥20 overlapping days and |r|
+crosses a threshold. Render as a "what moves together" list, not a matrix
+of numbers. The single most requested feature class in quantified-self.
+
+### I2 — Weekday fingerprint + seasonality (S)
+Per tracker: average by day-of-week (7 bars) and by month (12 bars).
+"Sundays are your zero days" / "you run 2x more June-Sept." Trivial math,
+big self-recognition.
+
+### I3 — Streak survival analysis (M)
+Distribution of the user's own historical streak lengths + a hazard view:
+"most of your streaks end on day 4-5." Turns the streak from a scoreboard
+into self-knowledge, and pairs with §4 D4's anti-guilt framing.
+
+### I4 — Measure trend engine (M)
+For measure trackers: rolling mean, rate of change per week, and a dashed
+projection band with honest wording ("if the last 6 weeks continue: ~75kg
+by Oct"). Guard: no projection under 10 readings. `lib/stats.ts` +
+`Analytics.tsx` chart overlay.
+
+### I5 — Goal attainment history (S)
+Goals shipped; add the meta-view: weekly hit-rate over time per goal
+("7 of the last 9 weeks"), best/worst month. One `goalHistory()` helper
+over existing entries + targets.
+
+### I6 — Habit stability score (S, tentative)
+Coefficient of variation of weekly totals → "steadiest habit / most
+volatile" ranking on the Insights page. Cheap, but phrase it kindly
+(volatile ≠ bad — a vacation is volatility).
+
+### I7 — Notes recall (M, tentative)
+Day notes accumulate for years: a notes search (client filter) + "your
+notes about sleep" grouping by keyword. NO LLM by default; an optional
+BYO-key Claude summarize button (Furnisher pattern) is acceptable if
+clearly opt-in, never automatic.
+
+### I8 — "Days like today" (L, moonshot)
+k-NN over day-vectors (all trackers normalized): given today so far, show
+the 5 most similar past days and what happened next. Fun, honest about
+being a toy ("pattern echo, not prophecy").
+
+### Sequencing
+I2 + I5 + I6 are one small release (all descriptive). I1 + I3 are the
+statistical release (build the guards carefully, test with synthetic
+fixtures where the right answer is known). I4 stands alone.
