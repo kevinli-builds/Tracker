@@ -223,3 +223,21 @@ just focuses the matching card. Pure, testable `lib/quicklog.ts`.
 - Apple Health import: no web API; a HealthKit-export-XML upload parser is
   possible but heavy. Park.
 - Streak share image: fold into D1 poster work if built.
+
+---
+
+## 8. Mobile & web experience scan (2026-07-05 — static review; app is
+login-gated so no anonymous browser pass)
+
+The mobile conventions are documented and consistently applied (44px
+targets, bottom sheets, safe-area padding, `viewport-fit=cover`, max-w-lg
+single column). Three things to eyeball on a phone next session-with-login:
+1. The new `/week` review page — chart widths and the Fri-Mon dashboard
+   card at 375px.
+2. Goal progress bars on `TrackerCard` — confirm they do not crowd the
+   tap-to-log button (the card is the primary touch surface).
+3. The IntroSheet (section 5) uses `env(safe-area-inset-bottom)` — confirm
+   on a notched device that the CTA is not flush against the home indicator.
+Also: the PWA manifest shipped — verify install + icon on iOS, and that the
+service worker does not cache-poison after deploys (network-first for data
+was the spec).
