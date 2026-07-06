@@ -92,3 +92,33 @@ export interface TrackerResource {
   created_at: string
   updated_at: string
 }
+
+// ── Lists ──────────────────────────────────────────────────────────────────
+// Free-form collections (Movies watched, Restaurants, Favorite celebrities…):
+// things you keep rows of rather than log daily. A list has user-defined columns
+// (stored as jsonb on the row); each row (ListItem) is a jsonb map of columnId →
+// value. Separate from the habit trackers. Column types drive the cell input.
+export type ListColumnType = 'text' | 'date' | 'number'
+
+export interface ListColumn {
+  id: string
+  name: string
+  type: ListColumnType
+}
+
+export interface List {
+  id: string
+  name: string
+  emoji: string
+  columns: ListColumn[]
+  sort_order: number
+  created_at: string
+}
+
+export interface ListItem {
+  id: string
+  list_id: string
+  values: Record<string, string> // columnId → value (all stored as strings)
+  sort_order: number
+  created_at: string
+}

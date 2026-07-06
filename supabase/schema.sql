@@ -205,3 +205,42 @@ drop policy if exists "resource_files_own_delete" on storage.objects;
 create policy "resource_files_own_delete" on storage.objects
   for delete to authenticated
   using (bucket_id = 'resource-files' and (storage.foldername(name))[1] = auth.uid()::text);
+
+-- ---------------------------------------------------------------------------
+-- lists / list_items: free-form collections (Movies watched, Restaurants,
+-- Favorite celebrities…) — rows with user-defined columns, kept separate from
+-- the habit trackers. See 12-lists.sql.
+-- ---------------------------------------------------------------------------
+create table if not exists lists (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid references auth.users(id) on delete cascade default auth.uid(),
+  name       text not null check (char_length(name) between 1 and 120),
+  emoji      text not null default '📋',
+  columns    jsonb not null default '[]'::jsonb,
+  sort_order int not null default 0,
+  created_at timestamptz not null default now()
+);
+create index if not exists lists_user_idx on lists (user_id);
+
+create table if not exists list_items (
+  id         uuid primary key default gen_random_uuid(),
+  user_id    uuid references auth.users(id) on delete cascade default auth.uid(),
+  list_id    uuid not null references lists(id) on delete cascade,
+  values     jsonb not null default '{}'::jsonb,
+  sort_order int not null default 0,
+  created_at timestamptz not null default now()
+);
+create index if not exists list_items_list_idx on list_items (list_id);
+create index if not exists list_items_user_idx on list_items (user_id);
+
+alter table lists enable row level security;
+drop policy if exists lists_own on lists;
+create policy lists_own on lists
+  for all to authenticated
+  using (auth.uid() = user_id) with check (auth.uid() = user_id);
+
+alter table list_items enable row level security;
+drop policy if exists list_items_own on list_items;
+create policy list_items_own on list_items
+  for all to authenticated
+  using (auth.uid() = user_id) with check (auth.uid() = user_id);

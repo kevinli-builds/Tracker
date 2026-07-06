@@ -15,7 +15,11 @@ import type {
   Section,
   TrackerStep,
   GoalPeriod,
+  List,
+  ListItem,
+  ListColumn,
 } from './types'
+import { normalizeColumns, normalizeItemValues } from './lists'
 
 // True when a PostgREST error means "that table doesn't exist yet" — used to
 // tolerate a migration that lags a deploy (e.g. day_notes, tracker_resources).
@@ -512,5 +516,117 @@ export async function saveNote(trackerId: string, day: string, note: string): Pr
       { tracker_id: trackerId, day, note: text, updated_at: new Date().toISOString() },
       { onConflict: 'tracker_id,day' },
     )
+  if (error) throw error
+}
+
+// ---- Lists (free-form collections) ----------------------------------------
+// A `list` has user-defined columns (jsonb); its rows live in `list_items`
+// (one jsonb value-map each). All reads tolerate a missing table so the app
+// still works before migration 12-lists.sql is applied. See supabase/12-lists.sql.
+
+function toList(row: List): List {
+  return { ...row, columns: normalizeColumns(row.columns), sort_order: Number(row.sort_order) }
+}
+
+function toListItem(row: ListItem): ListItem {
+  return { ...row, values: normalizeItemValues(row.values), sort_order: Number(row.sort_order) }
+}
+
+export async function listLists(): Promise<List[]> {
+  const { data, error } = await supabase
+    .from('lists')
+    .select('*')
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true })
+  if (error) {
+    if (isMissingTable(error, 'lists')) return []
+    throw error
+  }
+  return (data ?? []).map(toList)
+}
+
+export async function getList(id: string): Promise<List | null> {
+  const { data, error } = await supabase.from('lists').select('*').eq('id', id).single()
+  if (error) {
+    if (error.code === 'PGRST116') return null // no rows
+    throw error
+  }
+  return toList(data)
+}
+
+export interface NewList {
+  name: string
+  emoji: string
+  columns: ListColumn[]
+}
+
+export async function createList(input: NewList, sortOrder: number): Promise<List> {
+  const { data, error } = await supabase
+    .from('lists')
+    .insert({ name: input.name, emoji: input.emoji, columns: input.columns, sort_order: sortOrder })
+    .select()
+    .single()
+  if (error) throw error
+  return toList(data)
+}
+
+export async function updateList(
+  id: string,
+  patch: Partial<Pick<List, 'name' | 'emoji' | 'columns' | 'sort_order'>>,
+): Promise<List> {
+  const { data, error } = await supabase.from('lists').update(patch).eq('id', id).select().single()
+  if (error) throw error
+  return toList(data)
+}
+
+export async function deleteList(id: string): Promise<void> {
+  const { error } = await supabase.from('lists').delete().eq('id', id)
+  if (error) throw error
+}
+
+// Row counts per list, for the lists dashboard. Tolerates a missing table.
+export async function listItemCounts(): Promise<Record<string, number>> {
+  const { data, error } = await supabase.from('list_items').select('list_id')
+  if (error) {
+    if (isMissingTable(error, 'list_items')) return {}
+    throw error
+  }
+  const counts: Record<string, number> = {}
+  for (const row of data ?? []) counts[(row as { list_id: string }).list_id] = (counts[(row as { list_id: string }).list_id] ?? 0) + 1
+  return counts
+}
+
+export async function listItems(listId: string): Promise<ListItem[]> {
+  const { data, error } = await supabase
+    .from('list_items')
+    .select('*')
+    .eq('list_id', listId)
+    .order('sort_order', { ascending: true })
+    .order('created_at', { ascending: true })
+  if (error) {
+    if (isMissingTable(error, 'list_items')) return []
+    throw error
+  }
+  return (data ?? []).map(toListItem)
+}
+
+export async function addListItem(listId: string, values: Record<string, string>, sortOrder: number): Promise<ListItem> {
+  const { data, error } = await supabase
+    .from('list_items')
+    .insert({ list_id: listId, values, sort_order: sortOrder })
+    .select()
+    .single()
+  if (error) throw error
+  return toListItem(data)
+}
+
+export async function updateListItem(id: string, values: Record<string, string>): Promise<ListItem> {
+  const { data, error } = await supabase.from('list_items').update({ values }).eq('id', id).select().single()
+  if (error) throw error
+  return toListItem(data)
+}
+
+export async function deleteListItem(id: string): Promise<void> {
+  const { error } = await supabase.from('list_items').delete().eq('id', id)
   if (error) throw error
 }

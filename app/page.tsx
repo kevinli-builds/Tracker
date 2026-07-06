@@ -34,6 +34,7 @@ import SectionHeader from '@/components/SectionHeader'
 import AddTrackerModal from '@/components/AddTrackerModal'
 import SignInScreen from '@/components/SignInScreen'
 import IntroSheet from '@/components/IntroSheet'
+import TopNav from '@/components/TopNav'
 
 export default function Dashboard() {
   const { user, loading: authLoading } = useUser()
@@ -468,6 +469,8 @@ export default function Dashboard() {
           </button>
         </div>
       </header>
+
+      <TopNav current="trackers" />
 
       {/* Weekend nudge to the weekly review */}
       {weekReady && !loading && trackers.length > 0 && (
