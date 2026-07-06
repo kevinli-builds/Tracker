@@ -98,7 +98,7 @@ export interface TrackerResource {
 // things you keep rows of rather than log daily. A list has user-defined columns
 // (stored as jsonb on the row); each row (ListItem) is a jsonb map of columnId →
 // value. Separate from the habit trackers. Column types drive the cell input.
-export type ListColumnType = 'text' | 'date' | 'number'
+export type ListColumnType = 'text' | 'date' | 'number' | 'note'
 
 export interface ListColumn {
   id: string

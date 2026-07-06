@@ -260,17 +260,29 @@ export default function ListDetail({ params }: { params: Promise<{ id: string }>
           <tbody>
             {items.map((it) => (
               <tr key={it.id} className="border-b border-zinc-100 last:border-b-0">
-                {cols.map((col) => (
-                  <td key={col.id} className="border-r border-zinc-100 p-0 last:border-r-0">
-                    <input
-                      type={col.type === 'number' ? 'number' : col.type === 'date' ? 'date' : 'text'}
-                      value={it.values[col.id] ?? ''}
-                      onChange={(e) => setCell(it.id, col.id, e.target.value)}
-                      onBlur={() => persistItem(it.id)}
-                      className="w-full min-w-[120px] bg-transparent px-3 py-2 outline-none focus:bg-indigo-50"
-                    />
-                  </td>
-                ))}
+                {cols.map((col) =>
+                  col.type === 'note' ? (
+                    <td key={col.id} className="border-r border-zinc-100 p-0 align-top last:border-r-0">
+                      <textarea
+                        rows={1}
+                        value={it.values[col.id] ?? ''}
+                        onChange={(e) => setCell(it.id, col.id, e.target.value)}
+                        onBlur={() => persistItem(it.id)}
+                        className="block w-full min-w-[220px] resize-y bg-transparent px-3 py-2 leading-snug outline-none focus:bg-indigo-50"
+                      />
+                    </td>
+                  ) : (
+                    <td key={col.id} className="border-r border-zinc-100 p-0 last:border-r-0">
+                      <input
+                        type={col.type === 'number' ? 'number' : col.type === 'date' ? 'date' : 'text'}
+                        value={it.values[col.id] ?? ''}
+                        onChange={(e) => setCell(it.id, col.id, e.target.value)}
+                        onBlur={() => persistItem(it.id)}
+                        className="w-full min-w-[120px] bg-transparent px-3 py-2 outline-none focus:bg-indigo-50"
+                      />
+                    </td>
+                  ),
+                )}
                 <td className="w-11 text-center">
                   <button onClick={() => removeRow(it.id)} title="Delete row" className="px-2 py-2 text-zinc-300 hover:text-red-600">
                     <Trash2 size={15} />

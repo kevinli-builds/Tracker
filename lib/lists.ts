@@ -4,11 +4,12 @@
 
 import type { ListColumn, ListColumnType } from './types'
 
-export const COLUMN_TYPES: ListColumnType[] = ['text', 'date', 'number']
+export const COLUMN_TYPES: ListColumnType[] = ['text', 'date', 'number', 'note']
 export const COLUMN_TYPE_LABEL: Record<ListColumnType, string> = {
   text: 'Text',
   date: 'Date',
   number: 'Number',
+  note: 'Notes (long text)',
 }
 
 const MAX = 200 // cap free-text lengths
@@ -32,11 +33,11 @@ export interface ListTemplate {
 }
 
 export const LIST_TEMPLATES: ListTemplate[] = [
-  { name: 'Movies watched', emoji: '🎬', columns: [['Title', 'text'], ['Watched on', 'date'], ['With', 'text'], ['Rating', 'number'], ['Notes', 'text']] },
-  { name: 'Music', emoji: '🎵', columns: [['Title', 'text'], ['Artist', 'text'], ['Listened on', 'date'], ['Notes', 'text']] },
-  { name: 'Restaurants', emoji: '🍽️', columns: [['Name', 'text'], ['Cuisine', 'text'], ['Location', 'text'], ['Rating', 'number'], ['Notes', 'text']] },
-  { name: 'Favorite celebrities', emoji: '⭐', columns: [['Name', 'text'], ['Known for', 'text'], ['Notes', 'text']] },
-  { name: 'Books', emoji: '📚', columns: [['Title', 'text'], ['Author', 'text'], ['Finished on', 'date'], ['Rating', 'number'], ['Notes', 'text']] },
+  { name: 'Movies watched', emoji: '🎬', columns: [['Title', 'text'], ['Watched on', 'date'], ['With', 'text'], ['Rating', 'number'], ['Notes', 'note']] },
+  { name: 'Music', emoji: '🎵', columns: [['Title', 'text'], ['Artist', 'text'], ['Listened on', 'date'], ['Notes', 'note']] },
+  { name: 'Restaurants', emoji: '🍽️', columns: [['Name', 'text'], ['Cuisine', 'text'], ['Location', 'text'], ['Rating', 'number'], ['Notes', 'note']] },
+  { name: 'Favorite celebrities', emoji: '⭐', columns: [['Name', 'text'], ['Known for', 'text'], ['Notes', 'note']] },
+  { name: 'Books', emoji: '📚', columns: [['Title', 'text'], ['Author', 'text'], ['Finished on', 'date'], ['Rating', 'number'], ['Notes', 'note']] },
 ]
 
 // Fresh columns (with new ids) from a template.
