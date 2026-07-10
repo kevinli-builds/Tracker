@@ -211,28 +211,25 @@ export default function TrackerCard({
           </button>
         </div>
 
-        {/* Series cards expand an inline checklist on tap; others link to detail */}
-        {isSeries ? (
+        {/* The row links to the detail page for every type (tap to open/edit).
+            Series cards get a separate chevron to expand the inline checklist. */}
+        <Link
+          href={`/t/${tracker.id}`}
+          className="flex min-w-0 flex-1 items-center gap-3"
+          aria-label={`Open ${tracker.name}`}
+        >
+          {head}
+          {!isSeries && <ChevronRight size={16} className="flex-none text-zinc-300" />}
+        </Link>
+        {isSeries && (
           <button
             onClick={() => setExpanded((v) => !v)}
             aria-expanded={expanded}
-            className="flex min-w-0 flex-1 items-center gap-3 text-left"
+            aria-label={expanded ? 'Hide steps' : 'Show steps'}
+            className="flex h-11 w-8 flex-none items-center justify-center rounded-lg text-zinc-300 hover:bg-zinc-100 hover:text-zinc-600"
           >
-            {head}
-            <ChevronDown
-              size={16}
-              className={`flex-none text-zinc-300 transition-transform ${expanded ? 'rotate-180' : ''}`}
-            />
+            <ChevronDown size={18} className={`transition-transform ${expanded ? 'rotate-180' : ''}`} />
           </button>
-        ) : (
-          <Link
-            href={`/t/${tracker.id}`}
-            className="flex min-w-0 flex-1 items-center gap-3"
-            aria-label={`Open ${tracker.name}`}
-          >
-            {head}
-            <ChevronRight size={16} className="flex-none text-zinc-300" />
-          </Link>
         )}
 
         {/* Logging controls */}

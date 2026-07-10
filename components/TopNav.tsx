@@ -11,7 +11,7 @@ export default function TopNav({ current }: { current: 'trackers' | 'lists' }) {
   return (
     <nav className="mb-5 flex gap-1 rounded-xl bg-zinc-100 p-1">
       <Link href="/" className={`${base} ${current === 'trackers' ? on : off}`}>
-        Trackers
+        To-Dos
       </Link>
       <Link href="/lists" className={`${base} ${current === 'lists' ? on : off}`}>
         Lists

@@ -448,7 +448,7 @@ export default function Dashboard() {
     <main className="mx-auto min-h-dvh w-full max-w-lg px-4 pb-28 pt-6">
       <header className="mb-6 flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight">Tracker</h1>
+          <h1 className="text-2xl font-bold tracking-tight">To-Dos</h1>
           <p className="text-sm text-zinc-500">Tap to log. See your calendar and stats.</p>
         </div>
         <div className="flex items-center gap-1.5">
@@ -604,7 +604,7 @@ export default function Dashboard() {
         style={{ bottom: 'calc(1.5rem + env(safe-area-inset-bottom))' }}
         className="fixed left-1/2 flex -translate-x-1/2 items-center gap-2 rounded-full bg-indigo-600 px-5 py-3 font-medium text-white shadow-lg shadow-indigo-600/30 hover:bg-indigo-700"
       >
-        <Plus size={20} /> Add tracker
+        <Plus size={20} /> Add to-do
       </button>
 
       {showIntro && (
@@ -635,15 +635,15 @@ function EmptyState({ onAdd }: { onAdd: () => void }) {
   return (
     <div className="rounded-2xl border border-dashed border-zinc-300 bg-white/60 p-8 text-center">
       <div className="mb-2 text-4xl">📋</div>
-      <h2 className="mb-1 font-semibold">Nothing tracked yet</h2>
+      <h2 className="mb-1 font-semibold">Nothing here yet</h2>
       <p className="mb-4 text-sm text-zinc-500">
-        Add your first tracker — a yes/no habit, or a daily count like drinks.
+        Add your first to-do — a yes/no habit, a daily count, or a multi-step routine.
       </p>
       <button
         onClick={onAdd}
         className="inline-flex items-center gap-2 rounded-lg bg-indigo-600 px-4 py-2 font-medium text-white hover:bg-indigo-700"
       >
-        <Plus size={18} /> Add tracker
+        <Plus size={18} /> Add to-do
       </button>
     </div>
   )
