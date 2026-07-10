@@ -7,6 +7,13 @@ since this was written._
 
 ---
 
+## 0. Status ledger (2026-07-05) + how to pick up
+
+**Shipped ✓** — PWA shell + weekly review (`/week`) + numeric goals (P1/P2); first-visit intro sheet (§5); Lists (free-form collections — a newer feature, not from this brief).
+**Next → (highest value first)** — close the reminder loop (the service worker exists but nothing SENDS yet — §6 W1 has the Vercel-cron + web-push spec); §9 I1 correlation matrix ⭐ + I2 weekday fingerprint + I3 streak-survival (the "Insights" release); D1 Year-in-Pixels poster; §6 no-LLM quick-log box.
+**Ops** — apply migration `11-goals.sql` in Supabase (the goals feature reads columns it adds).
+**Ethos guard** — every analytic stays pure+tested in `lib/stats.ts`, minimum-sample-guarded, and never guilts the user.
+
 ## 1. Product roadmap (PM)
 
 Tracker's logging/analytics core is genuinely complete (4 tracker types, sections,
