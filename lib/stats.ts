@@ -1,7 +1,7 @@
 // Pure analytics over a tracker's entries. No I/O — easy to unit-test.
 
-import type { Entry, DayTotals, GoalDirection, StreakSide, TrackerStep } from './types'
-import { addDays } from './date'
+import type { Entry, DayTotals, GoalDirection, StreakSide, TrackerStep, TrackerType } from './types'
+import { addDays, fromDayKey } from './date'
 
 // ---- Series (checklist) ---------------------------------------------------
 
@@ -352,4 +352,227 @@ export function buildBuckets(
     value: combine(g),
   }))
   return { granularity, buckets }
+}
+
+// ---- Insights: correlations (I1) -------------------------------------------
+// House rules: honest statistics — minimum-sample guards, observation-not-
+// causation phrasing (the UI says "moves together", never "causes"), and
+// nothing renders below the guards. Pearson on the right encodings covers
+// every tracker-type pair: binary×binary is the phi coefficient,
+// binary×continuous is point-biserial, continuous×continuous is plain r —
+// so one correlation core serves yesno, count, measure, and series alike.
+
+// Only pairs observed together on at least this many days are considered.
+export const MIN_OVERLAP_DAYS = 20
+// Only correlations at least this strong are reported.
+export const R_THRESHOLD = 0.3
+// A binary (yesno) series needs at least this many days in EACH state —
+// a habit done (or skipped) nearly every day correlates with nothing
+// meaningfully, and phi degenerates.
+export const MIN_STATE_DAYS = 3
+
+export interface TrackerSeries {
+  id: string
+  name: string
+  type: TrackerType
+  totals: DayTotals
+  since: string // first tracked day (created day or earliest entry)
+}
+
+export interface CorrelationFinding {
+  aId: string
+  aName: string
+  bId: string
+  bName: string
+  r: number // Pearson r on the encoded series, 2dp
+  n: number // overlapping days the estimate is based on
+  lag: 0 | 1 // 0 = same day; 1 = "a today → b tomorrow"
+}
+
+// A tracker's value on a day, or undefined when the day isn't observed:
+// before the tracker existed, or (for measures) a day with no reading.
+// For the other types an absent day inside the range is a real zero.
+function seriesValue(s: TrackerSeries, day: string, today: string): number | undefined {
+  if (day < s.since || day > today) return undefined
+  const v = s.totals[day]
+  if (s.type === 'measure') return v // undefined when no reading — excluded
+  if (s.type === 'yesno') return (v ?? 0) > 0 ? 1 : 0
+  return v ?? 0
+}
+
+function pearson(xs: number[], ys: number[]): number | null {
+  const n = xs.length
+  if (n < 2) return null
+  const mx = xs.reduce((a, b) => a + b, 0) / n
+  const my = ys.reduce((a, b) => a + b, 0) / n
+  let sxy = 0
+  let sxx = 0
+  let syy = 0
+  for (let i = 0; i < n; i++) {
+    const dx = xs[i] - mx
+    const dy = ys[i] - my
+    sxy += dx * dy
+    sxx += dx * dx
+    syy += dy * dy
+  }
+  if (sxx === 0 || syy === 0) return null // a constant series correlates with nothing
+  return sxy / Math.sqrt(sxx * syy)
+}
+
+// Guard against degenerate binary series (see MIN_STATE_DAYS).
+function binaryStatesOk(s: TrackerSeries, values: number[]): boolean {
+  if (s.type !== 'yesno') return true
+  const ones = values.filter((v) => v > 0).length
+  return ones >= MIN_STATE_DAYS && values.length - ones >= MIN_STATE_DAYS
+}
+
+// All pairwise findings that survive the guards, strongest first. Same-day
+// pairs are reported once (a↔b); lag-1 pairs are directional ("a today →
+// b tomorrow"), so both directions are tested.
+export function correlationFindings(series: TrackerSeries[], today: string): CorrelationFinding[] {
+  const findings: CorrelationFinding[] = []
+
+  const tryPair = (a: TrackerSeries, b: TrackerSeries, lag: 0 | 1) => {
+    const xs: number[] = []
+    const ys: number[] = []
+    // Walk a's observable range; pair a's day with b's day + lag.
+    const start = a.since > b.since ? a.since : b.since
+    for (const day of dayRange(start, today)) {
+      const va = seriesValue(a, day, today)
+      const vb = seriesValue(b, lag === 0 ? day : addDays(day, 1), today)
+      if (va === undefined || vb === undefined) continue
+      xs.push(va)
+      ys.push(vb)
+    }
+    if (xs.length < MIN_OVERLAP_DAYS) return
+    if (!binaryStatesOk(a, xs) || !binaryStatesOk(b, ys)) return
+    const r = pearson(xs, ys)
+    if (r === null || Math.abs(r) < R_THRESHOLD) return
+    findings.push({
+      aId: a.id,
+      aName: a.name,
+      bId: b.id,
+      bName: b.name,
+      r: Math.round(r * 100) / 100,
+      n: xs.length,
+      lag,
+    })
+  }
+
+  for (let i = 0; i < series.length; i++) {
+    for (let j = 0; j < series.length; j++) {
+      if (i === j) continue
+      if (i < j) tryPair(series[i], series[j], 0) // same-day: symmetric, once
+      tryPair(series[i], series[j], 1) // lag: directional, both ways
+    }
+  }
+  findings.sort((a, b) => Math.abs(b.r) - Math.abs(a.r))
+  return findings
+}
+
+// ---- Insights: weekday fingerprint + seasonality (I2) ----------------------
+
+export interface FingerprintCell {
+  count: number // days the mean is based on
+  mean: number
+}
+
+export interface Fingerprint {
+  byWeekday: FingerprintCell[] // 7 cells, Monday first (house weeks are Mon→Sun)
+  byMonth: FingerprintCell[] // 12 cells, January first
+}
+
+// Average value by day-of-week and by calendar month. mode 'allDays' treats
+// unlogged in-range days as real zeros (count/yesno habits); 'loggedDays'
+// averages only days with a reading (measures — a missing weigh-in is not a
+// zero-kg day). The UI should grey out cells with a small `count`.
+export function fingerprint(
+  totals: DayTotals,
+  since: string,
+  today: string,
+  mode: 'allDays' | 'loggedDays',
+): Fingerprint {
+  const byWeekday: FingerprintCell[] = Array.from({ length: 7 }, () => ({ count: 0, mean: 0 }))
+  const byMonth: FingerprintCell[] = Array.from({ length: 12 }, () => ({ count: 0, mean: 0 }))
+  const wkSum = Array(7).fill(0)
+  const moSum = Array(12).fill(0)
+  for (const day of dayRange(since, today)) {
+    const has = day in totals
+    if (mode === 'loggedDays' && !has) continue
+    const v = totals[day] ?? 0
+    const wd = (fromDayKey(day).getDay() + 6) % 7 // JS Sun=0 → Monday-first index
+    const mo = Number(day.slice(5, 7)) - 1
+    byWeekday[wd].count++
+    wkSum[wd] += v
+    byMonth[mo].count++
+    moSum[mo] += v
+  }
+  for (let i = 0; i < 7; i++) byWeekday[i].mean = byWeekday[i].count ? wkSum[i] / byWeekday[i].count : 0
+  for (let i = 0; i < 12; i++) byMonth[i].mean = byMonth[i].count ? moSum[i] / byMonth[i].count : 0
+  return { byWeekday, byMonth }
+}
+
+// ---- Insights: streak survival (I3) ----------------------------------------
+
+// Enough ended streaks to say anything about where they tend to end.
+export const MIN_COMPLETED_STREAKS = 5
+
+export interface StreakSurvival {
+  lengths: number[] // every COMPLETED streak length, in order of occurrence
+  ongoing: number // the current (censored) streak, 0 if none — never mixed in
+  median: number | null // null below MIN_COMPLETED_STREAKS
+  max: number
+  // The most common completed length — "most of your streaks end on day N".
+  typicalEnd: number | null // null below MIN_COMPLETED_STREAKS
+  // % of completed streaks that reached at least `day`, for day 1..max (≤30).
+  survival: { day: number; pct: number }[]
+}
+
+// Survival analysis over the user's own historical streaks. The streak still
+// running today is censored (we don't know how long it will get), so it is
+// reported separately and never counted as "ended" — the honest reading, and
+// the anti-guilt one: the curve describes the past, it doesn't predict failure.
+export function streakSurvival(
+  totals: DayTotals,
+  side: StreakSide,
+  today: string,
+  since: string,
+): StreakSurvival {
+  const lengths: number[] = []
+  let run = 0
+  for (const day of dayRange(since, today)) {
+    if (countsForStreak(totals[day] ?? 0, side)) {
+      run++
+    } else {
+      if (run > 0) lengths.push(run)
+      run = 0
+    }
+  }
+  const ongoing = run // reached today without breaking — censored
+
+  const enough = lengths.length >= MIN_COMPLETED_STREAKS
+  const sorted = [...lengths].sort((a, b) => a - b)
+  const median = enough ? sorted[Math.floor(sorted.length / 2)] : null
+
+  let typicalEnd: number | null = null
+  if (enough) {
+    const freq = new Map<number, number>()
+    for (const l of lengths) freq.set(l, (freq.get(l) ?? 0) + 1)
+    let bestCount = 0
+    for (const [len, count] of [...freq.entries()].sort((a, b) => a[0] - b[0])) {
+      if (count > bestCount) {
+        bestCount = count
+        typicalEnd = len
+      }
+    }
+  }
+
+  const max = lengths.length ? Math.max(...lengths) : 0
+  const survival: { day: number; pct: number }[] = []
+  for (let day = 1; day <= Math.min(max, 30); day++) {
+    const reached = lengths.filter((l) => l >= day).length
+    survival.push({ day, pct: Math.round((reached / lengths.length) * 100) })
+  }
+
+  return { lengths, ongoing, median, max, typicalEnd, survival }
 }

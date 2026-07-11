@@ -20,7 +20,7 @@ import {
 import type { TrackerStep } from './types'
 
 function entry(day: string, value = 1): Entry {
-  return { id: day + value + Math.random(), tracker_id: 't', day, value, logged_at: day }
+  return { id: day + value + Math.random(), tracker_id: 't', step_id: null, day, value, logged_at: day }
 }
 
 describe('dayTotals', () => {
