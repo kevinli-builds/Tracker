@@ -306,3 +306,37 @@ being a toy ("pattern echo, not prophecy").
 I2 + I5 + I6 are one small release (all descriptive). I1 + I3 are the
 statistical release (build the guards carefully, test with synthetic
 fixtures where the right answer is known). I4 stands alone.
+
+---
+
+## Security & code-quality audit (2026-07-12, Fable portfolio pass)
+
+_Public repo; nothing sensitive to hide this pass (no live-exploit findings), so all
+notes stay in-repo._
+
+**Security posture: clean and simple — the right design for a single-user tool.**
+- Client uses only the public anon key; **RLS is the boundary**. Every table is
+  `for all to authenticated using (auth.uid() = user_id) with check (...)`, and
+  `user_id` DEFAULTs to `auth.uid()`, so a client can neither read nor write
+  another user's rows even though the anon key is public.
+- File uploads: `resource-files` is a **private** bucket with own-folder-only RLS
+  (`storage.foldername(name)[1] = auth.uid()`), served via short-lived signed URLs.
+  Correct.
+- All user text renders as escaped JSX; link URLs pass `normalizeUrl` (http/https
+  only) before becoming `target="_blank"` hrefs. No injection surface found.
+
+**Nothing critical or high.** Keep the RLS pattern (default `user_id = auth.uid()`,
+`for all` own-rows) on every new table — it's what makes the public anon key safe.
+
+**Quality / hardening — low priority:**
+- **Finish the CSP.** `next.config.ts` already sets frame/referrer/HSTS headers;
+  the note says a full script/style/connect CSP is "next" but must be validated
+  against the live Google-OAuth + Supabase flow first. Worth doing — it's the last
+  meaningful header gap. Validate on a preview deploy before shipping to `main`
+  (a wrong `connect-src` locks users out of sign-in).
+- Good test coverage on the pure `lib/` logic already (date/stats/format/url). As
+  the Insights engine (I1–I3) lands, keep the synthetic-fixture discipline —
+  correlation/streak-survival math is exactly where a silent stats bug hides.
+- The shared-Supabase-project arrangement with MapCrowd is fine (separate tables,
+  per-user RLS), but note it in any incident runbook: a project-level auth change
+  (redirect URLs, JWT settings) affects BOTH apps.
