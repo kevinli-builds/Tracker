@@ -21,6 +21,8 @@ export default function ListDetail({ params }: { params: Promise<{ id: string }>
   const [notFound, setNotFound] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [menuCol, setMenuCol] = useState<string | null>(null) // open column menu
+  const [menuPos, setMenuPos] = useState<{ top: number; left: number } | null>(null) // fixed-position anchor
+  const [confirmCol, setConfirmCol] = useState<string | null>(null) // column pending delete-confirm
   const [confirmDelete, setConfirmDelete] = useState(false)
 
   // Refs mirror state so blur handlers persist the latest values.
@@ -106,6 +108,11 @@ export default function ListDetail({ params }: { params: Promise<{ id: string }>
   }
 
   // ── Column edits ─────────────────────────────────────────────
+  function closeMenu() {
+    setMenuCol(null)
+    setMenuPos(null)
+    setConfirmCol(null)
+  }
   function renameColumn(colId: string, name: string) {
     setList((l) => (l ? { ...l, columns: l.columns.map((c) => (c.id === colId ? { ...c, name } : c)) } : l))
   }
@@ -115,16 +122,39 @@ export default function ListDetail({ params }: { params: Promise<{ id: string }>
   function setColumnType(colId: string, type: ListColumnType) {
     const next = (listRef.current?.columns ?? []).map((c) => (c.id === colId ? { ...c, type } : c))
     persistList({ columns: next })
-    setMenuCol(null)
+    closeMenu()
   }
   function addColumn() {
     const next = [...(listRef.current?.columns ?? []), newColumn('New column', 'text')]
     persistList({ columns: next })
   }
-  function deleteColumn(colId: string) {
-    const next = (listRef.current?.columns ?? []).filter((c) => c.id !== colId)
-    persistList({ columns: next })
-    setMenuCol(null)
+  async function deleteColumn(colId: string) {
+    const nextCols = (listRef.current?.columns ?? []).filter((c) => c.id !== colId)
+    // Rows still hold this column's value under its id — strip that orphaned key
+    // so no dead data lingers in list_items.values.
+    const affected = itemsRef.current.filter((it) => colId in it.values)
+    const nextItems = itemsRef.current.map((it) => {
+      if (!(colId in it.values)) return it
+      const rest = { ...it.values }
+      delete rest[colId]
+      return { ...it, values: rest }
+    })
+    setItems(nextItems)
+    closeMenu()
+    // Removing the column is the user-visible action (optimistic w/ rollback).
+    await persistList({ columns: nextCols })
+    // Cleaning the orphaned cell values is best-effort — orphans are harmless if
+    // a write fails, so a failure here doesn't undo the column removal.
+    for (const it of affected) {
+      if (it.id.startsWith('tmp-')) continue
+      const updated = nextItems.find((x) => x.id === it.id)
+      if (!updated) continue
+      try {
+        await updateListItem(it.id, updated.values)
+      } catch {
+        setError('Column removed, but some old cell data couldn’t be cleaned up.')
+      }
+    }
   }
 
   // ── Row edits ────────────────────────────────────────────────
@@ -214,16 +244,31 @@ export default function ListDetail({ params }: { params: Promise<{ id: string }>
                       className="min-w-[110px] flex-1 bg-transparent px-3 py-2 text-xs font-semibold text-zinc-700 outline-none focus:bg-indigo-50"
                     />
                     <button
-                      onClick={() => setMenuCol((m) => (m === col.id ? null : col.id))}
+                      onClick={(e) => {
+                        if (menuCol === col.id) {
+                          closeMenu()
+                          return
+                        }
+                        const r = e.currentTarget.getBoundingClientRect()
+                        setMenuPos({ top: r.bottom + 4, left: Math.max(8, r.right - 176) })
+                        setConfirmCol(null)
+                        setMenuCol(col.id)
+                      }}
                       title="Column options"
                       className="flex-none px-2 py-2 text-zinc-400 hover:text-zinc-700"
                     >
                       <MoreHorizontal size={15} />
                     </button>
-                    {menuCol === col.id && (
+                    {menuCol === col.id && menuPos && (
                       <>
-                        <div className="fixed inset-0 z-10" onClick={() => setMenuCol(null)} />
-                        <div className="absolute right-0 top-full z-20 mt-1 w-40 rounded-lg border border-zinc-200 bg-white p-1 shadow-lg">
+                        {/* Fixed positioning lifts the menu out of the table's
+                            overflow-x-auto wrapper, which would otherwise clip it
+                            (esp. the Delete action) on short tables / mobile. */}
+                        <div className="fixed inset-0 z-10" onClick={closeMenu} />
+                        <div
+                          style={{ top: menuPos.top, left: menuPos.left }}
+                          className="fixed z-20 w-44 rounded-lg border border-zinc-200 bg-white p-1 shadow-lg"
+                        >
                           <p className="px-2 pb-1 pt-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-400">Type</p>
                           {COLUMN_TYPES.map((ty) => (
                             <button
@@ -236,14 +281,35 @@ export default function ListDetail({ params }: { params: Promise<{ id: string }>
                               {COLUMN_TYPE_LABEL[ty]}
                             </button>
                           ))}
-                          {cols.length > 1 && (
-                            <button
-                              onClick={() => deleteColumn(col.id)}
-                              className="mt-1 block w-full rounded border-t border-zinc-100 px-2 py-1.5 text-left text-xs font-medium text-red-600 hover:bg-red-50"
-                            >
-                              Delete column
-                            </button>
-                          )}
+                          {cols.length > 1 &&
+                            (confirmCol === col.id ? (
+                              <div className="mt-1 border-t border-zinc-100 px-2 pb-1 pt-1.5">
+                                <p className="pb-1.5 text-[11px] leading-snug text-zinc-500">
+                                  Delete this column and its data in every row?
+                                </p>
+                                <div className="flex gap-1">
+                                  <button
+                                    onClick={() => deleteColumn(col.id)}
+                                    className="flex-1 rounded bg-red-600 px-2 py-1 text-xs font-medium text-white hover:bg-red-700"
+                                  >
+                                    Delete
+                                  </button>
+                                  <button
+                                    onClick={() => setConfirmCol(null)}
+                                    className="rounded px-2 py-1 text-xs font-medium text-zinc-500 hover:bg-zinc-100"
+                                  >
+                                    Cancel
+                                  </button>
+                                </div>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => setConfirmCol(col.id)}
+                                className="mt-1 block w-full rounded border-t border-zinc-100 px-2 py-1.5 text-left text-xs font-medium text-red-600 hover:bg-red-50"
+                              >
+                                Delete column
+                              </button>
+                            ))}
                         </div>
                       </>
                     )}
