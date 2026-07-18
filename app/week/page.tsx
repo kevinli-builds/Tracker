@@ -125,6 +125,14 @@ export default function WeekPage() {
             ))}
           </div>
 
+          <Link
+            href="/insights"
+            className="mt-4 flex items-center justify-between rounded-xl bg-white p-3 text-sm ring-1 ring-black/5 hover:ring-black/10"
+          >
+            <span className="font-medium text-zinc-700">🔗 What moves together</span>
+            <span className="text-xs text-zinc-400">patterns across your trackers →</span>
+          </Link>
+
           {notes.length > 0 && (
             <section className="mt-8">
               <h2 className="mb-2 flex items-center gap-1.5 text-sm font-semibold text-zinc-600">

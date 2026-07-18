@@ -9,8 +9,11 @@ import {
   buildBuckets,
   defaultStreakSide,
   resolveRange,
+  fingerprint,
+  streakSurvival,
   type Bucket,
   type RangeId,
+  type FingerprintCell,
 } from '@/lib/stats'
 import { addDays, dayLabel, shortDay, shortMonth } from '@/lib/date'
 import { fmtNum } from '@/lib/format'
@@ -105,6 +108,12 @@ export default function Analytics({
     if (granularity === 'week') return `${shortDay(b.start)}–${shortDay(b.end)}: ${v}`
     return `${shortMonth(b.key)}: ${v}`
   }
+
+  // ── Insights (I2 + I3): weekday/month fingerprint + streak survival ──────
+  // Measures average only logged days (a missing weigh-in is not a 0); habits
+  // treat unlogged in-range days as real zeros.
+  const fp = fingerprint(totals, since, today, isMeasure ? 'loggedDays' : 'allDays')
+  const surv = !isMeasure ? streakSurvival(totals, side, today, since) : null
 
   return (
     <div className="space-y-4">
@@ -262,6 +271,100 @@ export default function Analytics({
           </>
         )}
       </div>
+
+      {/* Weekday / month fingerprint (I2) — under-sampled cells grey out */}
+      <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
+        <h3 className="mb-3 text-sm font-semibold text-zinc-700">Your rhythm</h3>
+        <FingerprintRow
+          cells={fp.byWeekday}
+          labels={['M', 'T', 'W', 'T', 'F', 'S', 'S']}
+          caption="by weekday"
+          color={tracker.color}
+        />
+        <div className="mt-3">
+          <FingerprintRow
+            cells={fp.byMonth}
+            labels={['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D']}
+            caption="by month"
+            color={tracker.color}
+          />
+        </div>
+        <p className="mt-2 text-[11px] text-zinc-400">
+          Average per day{unit ? ` (${unit})` : ''}. Faded bars have under 3 days of data.
+        </p>
+      </div>
+
+      {/* Streak survival (I3) — only once there's history to describe */}
+      {surv && surv.median != null && surv.typicalEnd != null && (
+        <div className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-black/5">
+          <h3 className="mb-1 text-sm font-semibold text-zinc-700">How your streaks tend to go</h3>
+          <p className="mb-3 text-xs text-zinc-500">
+            {surv.lengths.length} finished streaks so far: median <strong className="text-zinc-700">{surv.median} {surv.median === 1 ? 'day' : 'days'}</strong>,
+            most often ending after day <strong className="text-zinc-700">{surv.typicalEnd}</strong>, longest{' '}
+            <strong className="text-zinc-700">{surv.max}</strong>.
+          </p>
+          <div className="flex h-16 items-end gap-[3px]">
+            {surv.survival.map((p) => (
+              <div
+                key={p.day}
+                className="flex-1 rounded-sm"
+                title={`${p.pct}% of your streaks reached day ${p.day}`}
+                style={{ height: `${Math.max(4, p.pct)}%`, background: tracker.color, opacity: 0.35 + (p.pct / 100) * 0.65 }}
+              />
+            ))}
+          </div>
+          <div className="mt-1 flex justify-between text-[11px] text-zinc-400">
+            <span>day 1</span>
+            <span>% of past streaks that got this far</span>
+            <span>day {surv.survival.length}</span>
+          </div>
+          <p className="mt-2 text-[11px] text-zinc-400">
+            {surv.ongoing > 0
+              ? `Your current ${surv.ongoing}-day streak isn't in this curve — it describes the past, not a prediction.`
+              : 'This describes your past streaks, not a prediction.'}
+          </p>
+        </div>
+      )}
+    </div>
+  )
+}
+
+// A row of mini bars for the fingerprint: mean per cell, faded when the mean
+// rests on fewer than 3 days (not enough to trust).
+function FingerprintRow({
+  cells,
+  labels,
+  caption,
+  color,
+}: {
+  cells: FingerprintCell[]
+  labels: string[]
+  caption: string
+  color: string
+}) {
+  const max = Math.max(...cells.map((c) => c.mean), 0.0001)
+  return (
+    <div>
+      <div className="flex h-12 items-end gap-[3px]">
+        {cells.map((c, i) => (
+          <div
+            key={i}
+            className="flex-1 rounded-sm"
+            title={`${labels[i]}: avg ${fmtNum(c.mean)} over ${c.count} day${c.count === 1 ? '' : 's'}`}
+            style={{
+              height: `${c.mean > 0 ? Math.max(6, (c.mean / max) * 100) : 3}%`,
+              background: c.count < 3 ? '#e4e4e7' : color,
+              opacity: c.count < 3 ? 0.8 : 1,
+            }}
+          />
+        ))}
+      </div>
+      <div className="mt-0.5 flex gap-[3px]">
+        {labels.map((l, i) => (
+          <span key={i} className="flex-1 text-center text-[10px] text-zinc-400">{l}</span>
+        ))}
+      </div>
+      <div className="text-[10px] text-zinc-400">{caption}</div>
     </div>
   )
 }
