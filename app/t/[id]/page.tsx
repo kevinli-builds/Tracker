@@ -29,6 +29,7 @@ import { EMOJIS } from '@/lib/constants'
 import { fmtNum, parseMeasure } from '@/lib/format'
 import type { Tracker, Entry, StreakSide, TrackerStep } from '@/lib/types'
 import CalendarView from '@/components/CalendarView'
+import YearPixels from '@/components/YearPixels'
 import Analytics from '@/components/Analytics'
 import DayEditor from '@/components/DayEditor'
 import StepChecklist from '@/components/StepChecklist'
@@ -568,6 +569,8 @@ export default function TrackerDetail({ params }: { params: Promise<{ id: string
           onSelectDay={setSelectedDay}
         />
       </section>
+
+      <YearPixels tracker={tracker} totals={totals} since={since} today={today} />
 
       <section>
         <div className="mb-2 flex items-center justify-between gap-2">

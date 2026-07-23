@@ -63,6 +63,7 @@ components/
   CalendarView.tsx     # Month grid; days are buttons → onSelectDay; note dots
   DayEditor.tsx        # Bottom-sheet for one day: value editor + note textarea
   Analytics.tsx        # Stat tiles + 30-day bar chart
+  YearPixels.tsx       # Year in Pixels: Mon→Sun year grid (SVG) + PNG poster export
   ResourcesSection.tsx # Tracker-level links, notes + file uploads (add/edit/delete) on the detail page
   SectionHeader.tsx    # Dashboard group divider: title + rule, collapse, rename, delete, reorder
   StepChecklist.tsx    # Series step checkboxes (card inline expand, detail today, DayEditor)
@@ -275,6 +276,22 @@ public/
   the panel treats "rotate link" as revocation. Managed from the dashboard's
   Share button (`SharePanel`): on/off (create/delete the `shares` row), display
   name, copy/rotate link, per-tracker checkboxes (`updateTracker({ shared })`).
+- **Year in Pixels** (`components/YearPixels.tsx`, detail page between Calendar and
+  Analytics): a calendar year as a Mon→Sun pixel grid + a downloadable PNG poster.
+  Grid math is pure and tested — `lib/stats.ts` `yearGrid(totals, year, {since,
+  today, binary})` returns one cell per day with `col`/`row` (columns are weeks
+  anchored on the Monday of the week containing Jan 1, matching `startOfWeek`),
+  plus `monthCols` for labels and year summary stats; `trackedYears` drives the
+  year chips. **The intensity ramp is per-tracker, per-year, never global**: yes/no
+  trackers are `binary` (any logged day = full), ≤4 distinct values map straight
+  onto the top levels (so a habit that only ever logs "1" reads as solid, not
+  faint), and beyond that it's quartiles of that year's logged values. Intensity
+  always means *amount*, including for `less` goals (dark = heavy day). Unlogged
+  days inside `[since, today]` are a lighter grey than days outside it — an
+  untracked day is not a zero. The poster is drawn on a hidden `<canvas>` at 2×
+  and saved via `toBlob` + an object URL (revoked on a timeout, Safari needs the
+  URL alive through the click); 53 columns never fit a phone, so the on-screen SVG
+  scrolls inside its own `overflow-x-auto` box.
 - **Mobile-first.** Tap targets are kept ≥44px; modals are bottom sheets
   (`items-end ... sm:items-center`, `rounded-t-2xl`) that dismiss on backdrop tap;
   the floating Add button uses `env(safe-area-inset-bottom)` (needs
@@ -341,6 +358,9 @@ public/
 - **Edit any past day** via a calendar-tap bottom sheet (adjust value / toggle)
 - **Per-day notes**, with peak/dip **note callouts** on the daily chart; today's
   note is also editable inline from each **dashboard card** (`listNotesForDay`)
+- **Year in Pixels** — a full calendar year of one tracker as a pixel grid on its
+  detail page, with a year picker and a downloadable PNG poster (no backend, no
+  migration)
 - **Public share page** — an opt-in, revocable read-only dashboard at
   `/s/<token>` showing chosen trackers' stats + charts to anyone with the link
   (needs migration `13-sharing.sql`)

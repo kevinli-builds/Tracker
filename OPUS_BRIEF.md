@@ -13,7 +13,9 @@ since this was written._
 
 _Ledger hygiene note (2026-07-23): the share-page work above was written 2026-07-13 but sat **uncommitted** for 10 days — the 07-18 Insights commit was made on top of it without picking it up. It was committed as-is on 07-23 (tests green, prod build clean). Check `git status` before assuming the ledger means "pushed"._
 
-**Next → (highest value first)** — **D1 Year-in-Pixels poster** (pure canvas + tested `yearGrid()` in stats.ts; no backend, no migration — the identity artifact); **W1 close the reminder loop** (the last P1: the service worker exists but nothing SENDS — §6 W1 has the Vercel-cron + web-push spec; note migrations 12/13 are taken, so reminders start at `14-`, and this introduces the FIRST server-side route + service-key env var in the repo); §6 W4 no-LLM quick-log box; then §9 I4 measure-trend / I5 goal history.
+**§4 D1 Year-in-Pixels poster (2026-07-23)** — `lib/stats.ts` `yearGrid()` + `trackedYears()` (17 fixture tests) and `components/YearPixels.tsx` on the detail page: Mon→Sun SVG year grid, year chips, PNG poster via a hidden 2× canvas. Per-tracker only; the **all-trackers composite poster is still unbuilt** (one strip per tracker, same ramp — the obvious next slice, likely on `/insights`).
+
+**Next → (highest value first)** — the **D1 all-trackers composite poster** (small, reuses `yearGrid` per tracker); **W1 close the reminder loop** (the last P1: the service worker exists but nothing SENDS — §6 W1 has the Vercel-cron + web-push spec; note migrations 12/13 are taken, so reminders start at `14-`, and this introduces the FIRST server-side route + service-key env var in the repo); §6 W4 no-LLM quick-log box; then §9 I4 measure-trend / I5 goal history.
 **Ops (user)** — apply migrations `11-goals.sql` **and `13-sharing.sql`** in Supabase; the goals bar and the share page each read columns/RPCs those add (reads tolerate absence, writes fail until applied).
 **Ethos guard** — every analytic stays pure+tested in `lib/stats.ts`, minimum-sample-guarded, and never guilts the user.
 

@@ -1,7 +1,7 @@
 // Pure analytics over a tracker's entries. No I/O — easy to unit-test.
 
 import type { Entry, DayTotals, GoalDirection, StreakSide, TrackerStep, TrackerType } from './types'
-import { addDays, fromDayKey } from './date'
+import { addDays, fromDayKey, startOfWeek } from './date'
 
 // ---- Series (checklist) ---------------------------------------------------
 
@@ -575,4 +575,138 @@ export function streakSurvival(
   }
 
   return { lengths, ongoing, median, max, typicalEnd, survival }
+}
+
+// ---- Year in Pixels (D1) ---------------------------------------------------
+
+// 0 = nothing logged; 1..4 = increasing amount. The ramp is relative to *this
+// tracker's own* year, never a global scale — the poster is self-knowledge, not
+// a comparison against anyone else.
+export type YearLevel = 0 | 1 | 2 | 3 | 4
+
+export interface YearCell {
+  day: string // 'YYYY-MM-DD'
+  total: number // 0 when unlogged
+  logged: boolean // had at least one entry
+  inRange: boolean // between `since` and `today` — outside is untracked, not "a zero"
+  level: YearLevel
+  col: number // week column, 0-based (weeks run Monday→Sunday, house convention)
+  row: number // 0 = Monday .. 6 = Sunday
+}
+
+export interface YearGrid {
+  year: number
+  cells: YearCell[] // every day of the calendar year, in date order
+  weeks: number // number of week columns the year spans (52 or 53)
+  monthCols: { month0: number; col: number }[] // where each month starts, for labels
+  // Upper bound of levels 1..3 when the ramp is quantile-based; empty when the
+  // tracker has ≤4 distinct values (then each value maps straight to a level).
+  thresholds: number[]
+  loggedDays: number
+  total: number
+  best: { day: string; total: number } | null
+}
+
+// Pick the value→level ramp for one year of readings. Two regimes, because a
+// quantile split looks broken on habits that only ever log "1":
+//   ≤4 distinct values → map them onto the top levels (a single value = full
+//   intensity, which is what a yes/no-ish habit should look like);
+//   otherwise → quartiles of the logged values.
+function levelRamp(values: number[]): { thresholds: number[]; levelOf: (v: number) => YearLevel } {
+  const sorted = [...values].sort((a, b) => a - b)
+  const uniq = [...new Set(sorted)]
+  if (uniq.length === 0) return { thresholds: [], levelOf: () => 0 }
+  if (uniq.length <= 4) {
+    // 1 value → [4]; 2 → [2,4]; 3 → [2,3,4]; 4 → [1,2,3,4].
+    const levels: YearLevel[][] = [[4], [2, 4], [2, 3, 4], [1, 2, 3, 4]]
+    const map = levels[uniq.length - 1]
+    return {
+      thresholds: [],
+      levelOf: (v) => (v > 0 ? map[uniq.indexOf(v)] ?? 4 : 0),
+    }
+  }
+  const q = (p: number) => sorted[Math.floor(p * (sorted.length - 1))]
+  const thresholds = [q(0.25), q(0.5), q(0.75)]
+  return {
+    thresholds,
+    levelOf: (v) => {
+      if (v <= 0) return 0
+      if (v <= thresholds[0]) return 1
+      if (v <= thresholds[1]) return 2
+      if (v <= thresholds[2]) return 3
+      return 4
+    },
+  }
+}
+
+// A full calendar year as a Mon→Sun pixel grid — the data behind the poster.
+// `binary` (yes/no trackers) skips the ramp: any logged day is full intensity.
+// Note: intensity always means *amount logged*, including for 'less' goals —
+// on a "standard drinks" tracker the dark pixels are the heavy days. That's the
+// honest reading of a magnitude heatmap; the UI legend says "less → more".
+export function yearGrid(
+  totals: DayTotals,
+  year: number,
+  opts: { since: string; today: string; binary?: boolean },
+): YearGrid {
+  const first = `${year}-01-01`
+  const last = `${year}-12-31`
+  const anchor = startOfWeek(first) // Monday of the week containing Jan 1
+
+  const days = dayRange(first, last)
+  const logged = days.map((d) => totals[d] ?? 0).filter((v) => v > 0)
+  const ramp = levelRamp(opts.binary ? [] : logged)
+
+  const monthCols: { month0: number; col: number }[] = []
+  let total = 0
+  let best: { day: string; total: number } | null = null
+
+  const cells: YearCell[] = days.map((day) => {
+    const value = totals[day] ?? 0
+    const has = day in totals && value !== 0
+    const d = fromDayKey(day)
+    const col = Math.floor(daysFrom(anchor, day) / 7)
+    const row = (d.getDay() + 6) % 7
+
+    if (d.getDate() === 1) monthCols.push({ month0: d.getMonth(), col })
+    if (value > 0) {
+      total += value
+      if (!best || value > best.total) best = { day, total: value }
+    }
+
+    return {
+      day,
+      total: value,
+      logged: has,
+      inRange: day >= opts.since && day <= opts.today,
+      level: has ? (opts.binary ? 4 : ramp.levelOf(value)) : 0,
+      col,
+      row,
+    }
+  })
+
+  return {
+    year,
+    cells,
+    weeks: cells.length ? cells[cells.length - 1].col + 1 : 0,
+    monthCols,
+    thresholds: ramp.thresholds,
+    loggedDays: logged.length,
+    total,
+    best,
+  }
+}
+
+// Whole days between two day keys, local-midnight based (a small local copy of
+// date.ts daysBetween so stats.ts keeps its single date import surface).
+function daysFrom(a: string, b: string): number {
+  return Math.round((fromDayKey(b).getTime() - fromDayKey(a).getTime()) / 86_400_000)
+}
+
+// The years a tracker has any data in (plus the current year), newest first —
+// the poster's year picker.
+export function trackedYears(totals: DayTotals, today: string): number[] {
+  const years = new Set<number>([Number(today.slice(0, 4))])
+  for (const day of Object.keys(totals)) years.add(Number(day.slice(0, 4)))
+  return [...years].sort((a, b) => b - a)
 }
