@@ -53,6 +53,7 @@ export interface Tracker {
   streak_side: StreakSide
   goal_target: number | null // optional numeric target for the current period
   goal_period: GoalPeriod | null // 'day' | 'week' — the window goal_target spans
+  shared: boolean // opted in to the owner's public share page (migration 13)
   sort_order: number
   archived: boolean
   created_at: string
@@ -121,4 +122,40 @@ export interface ListItem {
   values: Record<string, string> // columnId → value (all stored as strings)
   sort_order: number
   created_at: string
+}
+
+// ── Public share page ────────────────────────────────────────────────────────
+// One per user (migration 13): the page is on while the row exists, the token
+// is the whole secret (rotate = new token, revoke = delete row).
+export interface Share {
+  id: string
+  token: string
+  display_name: string
+  created_at: string
+}
+
+// One shared tracker as returned by the public_share() RPC: display fields plus
+// pre-aggregated day totals — no raw entries, notes, or step labels. first_day
+// is the earliest entry day (null if never logged), for computing `since`.
+export interface SharedTrackerData {
+  id: string
+  name: string
+  subtitle: string | null
+  type: TrackerType
+  color: string
+  emoji: string
+  unit: string | null
+  goal_direction: GoalDirection
+  streak_side: StreakSide
+  goal_target: number | null
+  goal_period: GoalPeriod | null
+  created_at: string
+  first_day: string | null
+  step_count: number
+  totals: DayTotals
+}
+
+export interface PublicShare {
+  display_name: string
+  trackers: SharedTrackerData[]
 }

@@ -18,6 +18,8 @@ import type {
   List,
   ListItem,
   ListColumn,
+  Share,
+  PublicShare,
 } from './types'
 import { normalizeColumns, normalizeItemValues } from './lists'
 
@@ -105,6 +107,7 @@ export async function updateTracker(
       | 'unit'
       | 'goal_target'
       | 'goal_period'
+      | 'shared'
       | 'sort_order'
       | 'section_id'
     >
@@ -517,6 +520,62 @@ export async function saveNote(trackerId: string, day: string, note: string): Pr
       { onConflict: 'tracker_id,day' },
     )
   if (error) throw error
+}
+
+// ---- Public share page ------------------------------------------------------
+// One `shares` row per user = the page is on; its token is the whole secret.
+// See supabase/13-sharing.sql. Reads tolerate a missing table (migration lag);
+// writes surface the error so the share panel can say "run the migration".
+
+// The signed-in user's share, or null if the page is off (or migration 13
+// hasn't been applied yet).
+export async function getMyShare(): Promise<Share | null> {
+  const { data, error } = await supabase.from('shares').select('*').maybeSingle()
+  if (error) {
+    if (isMissingTable(error, 'shares')) return null
+    throw error
+  }
+  return data
+}
+
+// Turn the page on. The token comes from lib/share.ts newShareToken().
+export async function createShare(displayName: string, token: string): Promise<Share> {
+  const { data, error } = await supabase
+    .from('shares')
+    .insert({ display_name: displayName, token })
+    .select()
+    .single()
+  if (error) throw error
+  return data
+}
+
+// Rename the page or rotate its link (patch { token: newShareToken() }).
+export async function updateShare(
+  id: string,
+  patch: Partial<Pick<Share, 'display_name' | 'token'>>,
+): Promise<Share> {
+  const { data, error } = await supabase.from('shares').update(patch).eq('id', id).select().single()
+  if (error) throw error
+  return data
+}
+
+// Turn the page off. The old link stops resolving immediately.
+export async function deleteShare(id: string): Promise<void> {
+  const { error } = await supabase.from('shares').delete().eq('id', id)
+  if (error) throw error
+}
+
+// The anonymous read for /s/[token] — works signed out (RPC is the only anon
+// path; see the migration). null = unknown token, page turned off, or the
+// function not deployed yet: all render as "not available".
+export async function fetchPublicShare(token: string): Promise<PublicShare | null> {
+  const { data, error } = await supabase.rpc('public_share', { share_token: token })
+  if (error) {
+    // PGRST202: function not found (migration 13 not applied).
+    if (error.code === 'PGRST202' || (error.message ?? '').includes('public_share')) return null
+    throw error
+  }
+  return (data as PublicShare | null) ?? null
 }
 
 // ---- Lists (free-form collections) ----------------------------------------

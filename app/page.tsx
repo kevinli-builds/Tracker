@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
-import { Plus, LogOut, CalendarCheck, ChevronRight, HelpCircle } from 'lucide-react'
+import { Plus, LogOut, CalendarCheck, ChevronRight, HelpCircle, Share2 } from 'lucide-react'
 import {
   listTrackers,
   listEntriesForDay,
@@ -35,6 +35,7 @@ import AddTrackerModal from '@/components/AddTrackerModal'
 import SignInScreen from '@/components/SignInScreen'
 import IntroSheet from '@/components/IntroSheet'
 import TopNav from '@/components/TopNav'
+import SharePanel from '@/components/SharePanel'
 
 export default function Dashboard() {
   const { user, loading: authLoading } = useUser()
@@ -52,6 +53,7 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null)
   const [showAdd, setShowAdd] = useState(false)
   const [showIntro, setShowIntro] = useState(false)
+  const [showShare, setShowShare] = useState(false)
   const [busyId, setBusyId] = useState<string | null>(null)
   const [addingSection, setAddingSection] = useState(false)
   const [newSectionTitle, setNewSectionTitle] = useState('')
@@ -453,6 +455,14 @@ export default function Dashboard() {
         </div>
         <div className="flex items-center gap-1.5">
           <button
+            onClick={() => setShowShare(true)}
+            title="Public page"
+            aria-label="Public page"
+            className="flex h-7 w-7 items-center justify-center rounded-full border border-zinc-200 bg-white text-zinc-400 hover:bg-zinc-50 hover:text-indigo-600"
+          >
+            <Share2 size={14} />
+          </button>
+          <button
             onClick={() => setShowIntro(true)}
             title="How Tracker works"
             aria-label="How Tracker works"
@@ -606,6 +616,22 @@ export default function Dashboard() {
       >
         <Plus size={20} /> Add to-do
       </button>
+
+      {showShare && (
+        <SharePanel
+          trackers={trackers}
+          defaultName={
+            (user.user_metadata?.full_name as string | undefined) ??
+            (user.user_metadata?.name as string | undefined) ??
+            user.email?.split('@')[0] ??
+            'My progress'
+          }
+          onTrackerShared={(id, shared) =>
+            setTrackers((list) => list.map((t) => (t.id === id ? { ...t, shared } : t)))
+          }
+          onClose={() => setShowShare(false)}
+        />
+      )}
 
       {showIntro && (
         <IntroSheet

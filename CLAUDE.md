@@ -51,8 +51,10 @@ without them. For a CI/clean build without real creds, pass dummy values:
 ## Project structure
 ```
 app/
-  page.tsx          # Dashboard: auth gate → tracker list, tap-to-log, add modal, sign-out
+  page.tsx          # Dashboard: auth gate → tracker list, tap-to-log, add modal, share panel, sign-out
   t/[id]/page.tsx   # Detail: today logger, resources, calendar, analytics, per-day editor, editable icon, delete
+  s/[token]/page.tsx # PUBLIC share page (no auth gate): read-only stats for shared trackers, by token
+  s/[token]/layout.tsx # Share-page metadata: noindex (the token is the secret — keep crawlers out)
   layout.tsx        # Root layout + viewport (viewport-fit=cover for safe-area)
   globals.css       # Tailwind import + theme CSS vars
 components/
@@ -65,6 +67,8 @@ components/
   SectionHeader.tsx    # Dashboard group divider: title + rule, collapse, rename, delete, reorder
   StepChecklist.tsx    # Series step checkboxes (card inline expand, detail today, DayEditor)
   SignInScreen.tsx     # "Sign in with Google" gate
+  SharePanel.tsx       # Public-page settings sheet: on/off, name, copy/rotate link, per-tracker opt-in
+  ShareTrackerCard.tsx # One tracker on the public page: stat tiles + range chart (no notes)
 lib/
   supabase.ts       # Supabase client (throws if env missing)
   db.ts             # ALL queries (trackers, entries, notes, resources, sections, steps); step check = addEntry(...stepId), uncheckStep
@@ -78,6 +82,8 @@ lib/
   format.test.ts
   stats.ts          # Pure analytics (dayTotals, streaks, summarize, summarizeMeasure, buildBuckets sum/avg) — unit-tested
   stats.test.ts
+  share.ts          # Pure share-page helpers (newShareToken, shareSince, totalsToEntries) — unit-tested
+  share.test.ts
   constants.ts      # COLORS + EMOJIS palettes
 supabase/
   schema.sql        # Full current schema — run on a FRESH project
@@ -91,6 +97,8 @@ supabase/
   09-subtitle.sql   # Migration: trackers.subtitle (optional description)
   10-storage.sql    # Migration: 'file' resource kind + private Storage bucket + RLS
   11-goals.sql      # Migration: trackers.goal_target + goal_period (numeric goals)
+  12-lists.sql      # Migration: lists + list_items tables (free-form collections)
+  13-sharing.sql    # Migration: trackers.shared + shares table + public_share() RPC
 public/
   manifest.json     # PWA manifest (installable, standalone)
   icon.svg          # App/maskable icon
@@ -106,6 +114,7 @@ public/
 | `tracker_resources` | Reference material attached to a tracker (not a day): `kind` (`link`/`note`/`file`), optional `title`, `url` (links), `body` (notes), `file_path`/`file_name`/`file_size` (uploads), `sort_order`. A check enforces link⇒url, note⇒body, file⇒file_path. |
 | `sections` | Dashboard groups: `title`, `sort_order`, `collapsed` (synced). `trackers.section_id` → `sections.id` (`on delete set null` → ungrouped). |
 | `tracker_steps` | Steps of a `series` tracker: `tracker_id`, `label`, `sort_order`. A checked step is an `entries` row with `step_id` set (day total = # steps done). |
+| `shares` | The public share page: one row per user (`token` unique + unguessable, `display_name`). Page exists while the row does; rotating `token` invalidates old links. Trackers opt in via `trackers.shared`. |
 
 - **RLS**: every table is `for all to authenticated using (auth.uid() = user_id)
   with check (auth.uid() = user_id)`. The `user_id` columns **default to
@@ -252,6 +261,20 @@ public/
   served stale). Registered by `components/ServiceWorkerRegister.tsx`, **production
   only** (a SW breaks Turbopack HMR in `next dev`). Note: `icon.svg` covers Android/
   desktop install + maskable; a PNG `apple-touch-icon` can be added for iOS polish.
+- **Public share page** (`/s/[token]`, migration 13): a read-only "frontpage" of
+  the user's opted-in trackers, viewable signed-out. The ONLY anonymous read
+  path is the `public_share(token)` **security-definer RPC** — no table has an
+  anon RLS policy (an anon `select using (true)` on `shares` would let anyone
+  enumerate tokens). The RPC returns display fields + per-day totals for
+  `shared and not archived` trackers; **notes, resources, step labels, and raw
+  entries (with their timestamps) never leave the DB**. The client reuses the
+  pure stats over the totals via `lib/share.ts` `totalsToEntries` (synthesizes
+  one entry per day so `summarize`/`summarizeMeasure` work unchanged) and
+  `shareSince`. Tokens are 32-hex CSPRNG strings minted client-side
+  (`newShareToken`); the URL is the whole secret, so the page is `noindex` and
+  the panel treats "rotate link" as revocation. Managed from the dashboard's
+  Share button (`SharePanel`): on/off (create/delete the `shares` row), display
+  name, copy/rotate link, per-tracker checkboxes (`updateTracker({ shared })`).
 - **Mobile-first.** Tap targets are kept ≥44px; modals are bottom sheets
   (`items-end ... sm:items-center`, `rounded-t-2xl`) that dismiss on backdrop tap;
   the floating Add button uses `env(safe-area-inset-bottom)` (needs
@@ -318,5 +341,8 @@ public/
 - **Edit any past day** via a calendar-tap bottom sheet (adjust value / toggle)
 - **Per-day notes**, with peak/dip **note callouts** on the daily chart; today's
   note is also editable inline from each **dashboard card** (`listNotesForDay`)
+- **Public share page** — an opt-in, revocable read-only dashboard at
+  `/s/<token>` showing chosen trackers' stats + charts to anyone with the link
+  (needs migration `13-sharing.sql`)
 - Google sign-in, per-user data (RLS)
 - Mobile-tuned (tap targets, bottom sheets, safe-area)

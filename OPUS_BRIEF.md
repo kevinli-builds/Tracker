@@ -7,11 +7,14 @@ since this was written._
 
 ---
 
-## 0. Status ledger (2026-07-05) + how to pick up
+## 0. Status ledger (2026-07-23) + how to pick up
 
-**Shipped ✓** — PWA shell + weekly review (`/week`) + numeric goals (P1/P2); first-visit intro sheet (§5); Lists (free-form collections — a newer feature, not from this brief); **§9 I1+I2+I3 stats engine (2026-07-11)** — `lib/stats.ts`: `correlationFindings` (Pearson core = phi / point-biserial / r per encoding; guards: ≥20 overlap days, |r| ≥ 0.3, ≥3 days per binary state, measures exclude unlogged days; lag-1 directional), `fingerprint` (weekday Mon-first + month means, allDays vs loggedDays modes), `streakSurvival` (completed lengths, censored ongoing streak, median/typical-end null under 5 streaks, survival curve). 14 fixture tests with known answers; UI **not** built yet.
-**Next → (highest value first)** — the **Insights UI** over the shipped engine: a "What moves together" list on a global `/insights` page (`listAllEntries` per tracker → `TrackerSeries[]` → `correlationFindings`; phrase as observation "tends to go with", never causation; show n) + per-tracker fingerprint bars and streak-survival strip in `Analytics.tsx` (grey cells with count < 3; survival copy per the anti-guilt framing in the `streakSurvival` doc comment); close the reminder loop (the service worker exists but nothing SENDS yet — §6 W1 has the Vercel-cron + web-push spec); D1 Year-in-Pixels poster; §6 no-LLM quick-log box.
-**Ops** — apply migration `11-goals.sql` in Supabase (the goals feature reads columns it adds).
+**Shipped ✓** — PWA shell + weekly review (`/week`) + numeric goals (P1/P2); first-visit intro sheet (§5); Lists (free-form collections — a newer feature, not from this brief); **public share page (2026-07-13, on explicit user pull — the §7 "parked" share-link item)**: `/s/[token]` read-only dashboard, `shares` table + `trackers.shared` + `public_share()` security-definer RPC (migration `13-sharing.sql`), `SharePanel` on the dashboard; **§9 I1+I2+I3 stats engine (2026-07-11)** — `lib/stats.ts`: `correlationFindings` (Pearson core = phi / point-biserial / r per encoding; guards: ≥20 overlap days, |r| ≥ 0.3, ≥3 days per binary state, measures exclude unlogged days; lag-1 directional), `fingerprint` (weekday Mon-first + month means, allDays vs loggedDays modes), `streakSurvival` (completed lengths, censored ongoing streak, median/typical-end null under 5 streaks, survival curve). 14 fixture tests with known answers; **§9 I1+I2+I3 Insights UI (2026-07-18, commit `fe80343`)** — global `/insights` "what moves together" page (linked from `/week`) + fingerprint bars and streak-survival strip in `Analytics.tsx`.
+
+_Ledger hygiene note (2026-07-23): the share-page work above was written 2026-07-13 but sat **uncommitted** for 10 days — the 07-18 Insights commit was made on top of it without picking it up. It was committed as-is on 07-23 (tests green, prod build clean). Check `git status` before assuming the ledger means "pushed"._
+
+**Next → (highest value first)** — **D1 Year-in-Pixels poster** (pure canvas + tested `yearGrid()` in stats.ts; no backend, no migration — the identity artifact); **W1 close the reminder loop** (the last P1: the service worker exists but nothing SENDS — §6 W1 has the Vercel-cron + web-push spec; note migrations 12/13 are taken, so reminders start at `14-`, and this introduces the FIRST server-side route + service-key env var in the repo); §6 W4 no-LLM quick-log box; then §9 I4 measure-trend / I5 goal history.
+**Ops (user)** — apply migrations `11-goals.sql` **and `13-sharing.sql`** in Supabase; the goals bar and the share page each read columns/RPCs those add (reads tolerate absence, writes fail until applied).
 **Ethos guard** — every analytic stays pure+tested in `lib/stats.ts`, minimum-sample-guarded, and never guilts the user.
 
 ## 1. Product roadmap (PM)
@@ -225,8 +228,11 @@ day word) — NO LLM, keep it offline-fast and predictable; unmatched input
 just focuses the matching card. Pure, testable `lib/quicklog.ts`.
 
 ### Tentative / parked
-- Per-tracker read-only share link (opt-in, revocable). Runs against the
-  private ethos — only build on explicit user pull.
+- ~~Per-tracker read-only share link (opt-in, revocable). Runs against the
+  private ethos — only build on explicit user pull.~~ **Shipped 2026-07-13** —
+  the user asked for a shareable "frontpage" (explicit pull): migration
+  `13-sharing.sql`, `/s/[token]`, `SharePanel`. Notes/resources stay private
+  by construction (the RPC never selects them).
 - Apple Health import: no web API; a HealthKit-export-XML upload parser is
   possible but heavy. Park.
 - Streak share image: fold into D1 poster work if built.
