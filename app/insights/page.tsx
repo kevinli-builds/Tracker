@@ -20,10 +20,12 @@ import {
 import { useUser } from '@/lib/useUser'
 import type { Tracker, Entry } from '@/lib/types'
 import SignInScreen from '@/components/SignInScreen'
+import YearComposite from '@/components/YearComposite'
 
 export default function InsightsPage() {
   const { user, loading: authLoading } = useUser()
   const [findings, setFindings] = useState<CorrelationFinding[]>([])
+  const [series, setSeries] = useState<TrackerSeries[]>([])
   const [trackers, setTrackers] = useState<Record<string, Tracker>>({})
   const [trackerCount, setTrackerCount] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -42,7 +44,7 @@ export default function InsightsPage() {
         const byTracker: Record<string, Entry[]> = {}
         for (const e of entries) (byTracker[e.tracker_id] ??= []).push(e)
 
-        const series: TrackerSeries[] = ts.map((t) => {
+        const built: TrackerSeries[] = ts.map((t) => {
           const totals = dayTotals(byTracker[t.id] ?? [])
           const created = toDayKey(new Date(t.created_at))
           const days = Object.keys(totals)
@@ -60,7 +62,8 @@ export default function InsightsPage() {
         for (const t of ts) map[t.id] = t
         setTrackers(map)
         setTrackerCount(ts.length)
-        setFindings(correlationFindings(series, today))
+        setSeries(built)
+        setFindings(correlationFindings(built, today))
       } catch (e) {
         if (alive) setError(e instanceof Error ? e.message : 'Could not load insights.')
       } finally {
@@ -129,6 +132,12 @@ export default function InsightsPage() {
           causes the other. Each line shows how many overlapping days it rests on; stronger
           and better-sampled patterns rank higher.
         </p>
+      )}
+
+      {/* Independent of the correlation guards: the poster is worth having on
+          day one, long before any pair clears MIN_OVERLAP_DAYS. */}
+      {!loading && !error && (
+        <YearComposite series={series} trackers={trackers} today={today} />
       )}
     </main>
   )

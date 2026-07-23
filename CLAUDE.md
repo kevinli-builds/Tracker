@@ -64,6 +64,7 @@ components/
   DayEditor.tsx        # Bottom-sheet for one day: value editor + note textarea
   Analytics.tsx        # Stat tiles + 30-day bar chart
   YearPixels.tsx       # Year in Pixels: Mon→Sun year grid (SVG) + PNG poster export
+  YearComposite.tsx    # All-trackers Year in Pixels: one day-per-pixel strip per tracker
   ResourcesSection.tsx # Tracker-level links, notes + file uploads (add/edit/delete) on the detail page
   SectionHeader.tsx    # Dashboard group divider: title + rule, collapse, rename, delete, reorder
   StepChecklist.tsx    # Series step checkboxes (card inline expand, detail today, DayEditor)
@@ -291,7 +292,16 @@ public/
   untracked day is not a zero. The poster is drawn on a hidden `<canvas>` at 2×
   and saved via `toBlob` + an object URL (revoked on a timeout, Safari needs the
   URL alive through the click); 53 columns never fit a phone, so the on-screen SVG
-  scrolls inside its own `overflow-x-auto` box.
+  scrolls inside its own `overflow-x-auto` box. Shared colour/filename helpers
+  (`rgba`/`cellFill`/`slug`/`MONTHS_SHORT`) live in **`lib/pixels.ts`** (pure,
+  tested) so the grid and the composite can't drift apart.
+- **All-trackers composite** (`components/YearComposite.tsx`, bottom of
+  `/insights`): one day-per-pixel strip per tracker for a chosen year, plus a
+  `year-in-pixels-<year>.png` poster. It reuses `yearGrid` per tracker, so **each
+  strip is shaded against its own year** — one heavy habit never makes another
+  read faint. It renders independently of the correlation guards (worth having on
+  day one, long before a pair clears `MIN_OVERLAP_DAYS`); the page passes it the
+  `TrackerSeries[]` it already builds for `correlationFindings`.
 - **Mobile-first.** Tap targets are kept ≥44px; modals are bottom sheets
   (`items-end ... sm:items-center`, `rounded-t-2xl`) that dismiss on backdrop tap;
   the floating Add button uses `env(safe-area-inset-bottom)` (needs
@@ -360,7 +370,8 @@ public/
   note is also editable inline from each **dashboard card** (`listNotesForDay`)
 - **Year in Pixels** — a full calendar year of one tracker as a pixel grid on its
   detail page, with a year picker and a downloadable PNG poster (no backend, no
-  migration)
+  migration); plus an **all-trackers composite** of day-per-pixel strips at the
+  bottom of `/insights`, with its own poster
 - **Public share page** — an opt-in, revocable read-only dashboard at
   `/s/<token>` showing chosen trackers' stats + charts to anyone with the link
   (needs migration `13-sharing.sql`)

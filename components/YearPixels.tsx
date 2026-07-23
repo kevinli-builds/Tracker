@@ -12,45 +12,12 @@ import { useMemo, useRef, useState } from 'react'
 import { Download } from 'lucide-react'
 import type { Tracker, DayTotals } from '@/lib/types'
 import { yearGrid, trackedYears, type YearGrid, type YearLevel } from '@/lib/stats'
+import { cellFill, slug, MONTHS_SHORT } from '@/lib/pixels'
 import { fmtNum } from '@/lib/format'
 import { shortDay } from '@/lib/date'
 
-const MONTHS_SHORT = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
 // Row labels: only Mon/Wed/Fri, like every calendar heatmap — 7 labels is noise.
 const ROW_LABELS = ['Mon', '', 'Wed', '', 'Fri', '', '']
-
-// Level → opacity of the tracker's colour. Level 0 is drawn separately (grey).
-const ALPHA: Record<Exclude<YearLevel, 0>, number> = { 1: 0.24, 2: 0.46, 3: 0.72, 4: 1 }
-
-const EMPTY_IN_RANGE = '#e7e7ea' // tracked that day, nothing logged
-const EMPTY_OUT_RANGE = '#f4f4f5' // outside the tracked window — not a zero
-
-// '#rrggbb' + alpha → 'rgba(r, g, b, a)'. Colours come from our own palette
-// (lib/constants COLORS), so a plain 6-digit hex is the only shape to handle.
-function rgba(hex: string, alpha: number): string {
-  const h = hex.replace('#', '')
-  const n = parseInt(h.length === 3 ? h.replace(/./g, (c) => c + c) : h, 16)
-  const r = (n >> 16) & 255
-  const g = (n >> 8) & 255
-  const b = n & 255
-  return `rgba(${r}, ${g}, ${b}, ${alpha})`
-}
-
-function cellFill(color: string, level: YearLevel, inRange: boolean): string {
-  if (level === 0) return inRange ? EMPTY_IN_RANGE : EMPTY_OUT_RANGE
-  return rgba(color, ALPHA[level])
-}
-
-// Safe-ish filename stem: letters/digits/dashes, collapsed.
-function slug(name: string): string {
-  return (
-    name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '')
-      .slice(0, 40) || 'tracker'
-  )
-}
 
 export default function YearPixels({
   tracker,
